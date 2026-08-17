@@ -10,10 +10,14 @@
 #   bash scripts/rpod.sh -f scripts/provision.sh
 #   echo 'some script' | bash scripts/rpod.sh -
 #
-# Env: RPOD_HOST (default: the pod we provisioned), RPOD_KEY, RPOD_TIMEOUT
+# Env: RPOD_HOST (required, pods are ephemeral), RPOD_KEY, RPOD_TIMEOUT
 set -uo pipefail
 
-RPOD_HOST="${RPOD_HOST:-mphb5nex7ub72y-64411809@ssh.runpod.io}"
+if [ -z "${RPOD_HOST:-}" ]; then
+  echo "RPOD_HOST is not set. Example: RPOD_HOST=abc123-6441@ssh.runpod.io" >&2
+  exit 2
+fi
+RPOD_HOST="${RPOD_HOST}"
 RPOD_KEY="${RPOD_KEY:-$HOME/.ssh/id_ed25519}"
 RPOD_TIMEOUT="${RPOD_TIMEOUT:-600}"
 

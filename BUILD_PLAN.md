@@ -1,86 +1,119 @@
 # Build plan
 
-Sequenced so that each milestone produces a **measurement**, not just code. The order is
-chosen so nothing is optimized before it is proven to be the bottleneck.
+Written before any code, kept here unedited in structure so the plan can be compared
+against what actually happened. Notes on where it was wrong are at the bottom.
 
----
+The ordering rule: every milestone has to end in a measurement, and nothing gets
+optimized before it is shown to be the bottleneck.
 
-### M0 — Provision and verify
-- Rent the box, run `scripts/provision.sh`, confirm `--gpus all` reaches the GPU.
-- Bring up the compose stack; Triton serves a trivial identity model.
-- **Exit criterion:** Triton `/v2/health/ready` returns 200 from inside the tunnel.
+### M0 - Provision and verify
 
-### M1 — The deliberate baseline
-- `baseline/server.py`: stock PyTorch VITS behind FastAPI. One request, one forward pass,
-  full WAV returned. No batching, no streaming. This is intentionally the dumb version.
-- Load it until it falls over. Record TTFA, throughput, GPU utilization vs. concurrency.
-- **Exit criterion:** a committed `results/baseline.json` with the curve. Every later
-  "N% faster" claim is measured against this file or it does not get made.
+Rent the box, run `scripts/provision.sh`, confirm `--gpus all` reaches the GPU. Bring up
+the stack, serve a trivial identity model.
 
-### M2 — Profile before optimizing
-- `torch.profiler` + Nsight Systems on a single utterance.
-- Confirm (do not assume) that the HiFi-GAN decoder dominates GPU time, and quantify how
-  much of a re-invoked pipeline is redundant text-encoder work.
-- **Exit criterion:** `docs/PROFILE.md` with the per-module time split.
+Done when Triton `/v2/health/ready` returns 200 through the tunnel.
 
-### M3 — Chunked streaming, in Python first
-- Restructure inference: encoder + duration + flow once, decoder in overlapping slices.
-- Implement overlap-add with equal-power crossfade; verify seams are inaudible
-  (spectral discontinuity metric at boundaries + listening).
-- Sweep chunk size and overlap; plot TTFA vs. per-chunk overhead vs. artifact metric.
-- **Exit criterion:** chosen chunk/overlap values with the sweep data behind them.
-  Correctness settled here, in the language that is fast to iterate in.
+### M1 - A deliberately dumb baseline
 
-### M4 — TensorRT engines
-- Export text encoder and HiFi-GAN decoder to ONNX with dynamic axes.
-- Build FP16 TRT engines with sane optimization profiles for the chunked decoder shape.
-- Keep the stochastic duration predictor and flow outside the engines, in FP32.
-- Validate FP16 vs FP32: mel spectral distance + A/B listening on a fixed test set.
-- **Exit criterion:** `results/fp16_quality.json` shows no meaningful degradation, and
-  per-chunk decoder latency is recorded against the PyTorch number.
+`baseline/server.py`: stock PyTorch VITS behind FastAPI. One request, one forward pass,
+a whole WAV back. No batching, no streaming. Load it until it falls over.
 
-### M5 — Triton, properly
-- `tts_frontend` Python backend (normalization → G2P → tokens).
-- `tts_stream` C++ backend in **decoupled mode** — the streaming loop, crossfade,
-  PCM conversion, response queue.
-- Tune dynamic batching window and instance groups.
-- **Exit criterion:** a single gRPC request yields a stream of audio chunks, and the
-  C++ per-chunk overhead distribution is tighter than the Python prototype's.
+Done when `results/baseline.json` holds the curve. Every later "N% faster" is measured
+against that file or it doesn't get claimed.
 
-### M6 — KV-cached incremental encoder
-- Cache text-encoder attention K/V so incrementally-arriving text (an LLM streaming
-  sentence fragments into TTS) only encodes new tokens instead of re-encoding everything.
-- **Exit criterion:** measured compute saved vs. utterance length, showing the quadratic
-  term removed. If it turns out not to matter for realistic fragment sizes, say so and
-  keep or drop it on the evidence.
+### M2 - Profile before optimizing
 
-### M7 — Go gateway
-- WebSocket termination, session state, gRPC to Triton's decoupled endpoint.
-- Dual routing: latency-tuned config for live streams, throughput-tuned for offline batch,
-  so offline work cannot contaminate the live path.
-- Admission control on in-flight sessions + Triton queue depth: reject fast rather than
-  admit and let everyone's p99 collapse.
-- **Exit criterion:** gateway holds N idle sessions with flat memory; admission control
-  demonstrably clamps the p99 knee instead of riding past it.
+`torch.profiler` plus Nsight on a single utterance. Confirm rather than assume that the
+HiFi-GAN decoder dominates, and quantify how much of a re-invoked pipeline is redundant
+text-encoder work.
 
-### M8 — Observability
-- OTel trace context propagated gateway → Triton, so one trace decomposes into
-  gateway / network / queue wait / frontend / first chunk / first byte.
-- Prometheus **histograms** (never averages — averages hide exactly the tail we care
-  about): TTFA, real-time factor, queue depth, GPU util via DCGM exporter.
-- **Exit criterion:** a Grafana dashboard where the TTFA p99 and its dominant contributing
-  span are visible side by side.
+Done when `docs/PROFILE.md` has the per-module split.
 
-### M9 — The number
-- `loadgen`: real WebSocket sessions, realistic sentence-length distribution, ramping
-  concurrency, TTFA histogram.
-- Find the knee. Report p99 and the concurrency it holds at.
-- **Exit criterion:** `results/` contains the run, and README's scoreboard is filled in
-  with whatever actually happened.
+### M3 - Chunked streaming, in Python first
 
----
+Restructure inference so encoder, duration and flow run once and the decoder runs in
+overlapping slices. Overlap-add with a crossfade, then check the seams are inaudible
+with a discontinuity metric and by listening. Sweep chunk size and overlap.
+
+Done when the chunk and overlap values are chosen with sweep data behind them. Get
+correctness settled here, in the language that's fast to iterate in.
+
+### M4 - TensorRT engines
+
+Export the text encoder and decoder to ONNX with dynamic axes. Build FP16 engines with
+optimization profiles that cover the chunked decoder shapes. Leave the stochastic
+duration predictor and the flow in PyTorch for now, since the duration predictor samples
+internally and isn't a pure function of its inputs.
+
+Done when FP16 vs FP32 shows no meaningful degradation and per-chunk decoder latency is
+recorded against the PyTorch number.
+
+### M5 - Triton, properly
+
+`tts_frontend` Python backend for normalization and tokenization. `tts_stream` C++
+backend in decoupled mode for the streaming loop, PCM conversion and response queue.
+Tune the batching window and instance groups.
+
+Done when one gRPC request yields a stream of chunks and the C++ per-chunk overhead is
+tighter than the Python prototype's.
+
+### M6 - Incremental encoding
+
+Cache text-encoder attention K/V so text arriving in fragments, an LLM streaming into
+TTS, only encodes the new tokens.
+
+Done when the compute saved is measured against utterance length. If it turns out not to
+matter at realistic fragment sizes, say so and drop it on the evidence.
+
+### M7 - Go gateway
+
+WebSocket termination, session state, gRPC to the decoupled endpoint. Separate routing
+for live streams and offline batch so offline work can't contaminate the live path.
+Admission control on in-flight sessions and queue depth: reject fast rather than admit
+and let everyone's p99 collapse.
+
+Done when the gateway holds N idle sessions on flat memory and admission control clamps
+the knee instead of riding past it.
+
+### M8 - Observability
+
+OTel context propagated gateway to Triton so one trace splits into gateway, network,
+queue wait, frontend, first chunk, first byte. Prometheus histograms, never averages,
+since an average hides exactly the tail this project is about.
+
+Done when p99 TTFA and its dominant span are visible side by side.
+
+### M9 - The number
+
+`loadgen` driving real WebSocket sessions with a realistic sentence-length distribution
+and ramping concurrency. Find the knee, report p99 and the concurrency it holds at.
+
+Done when `results/` has the run and the README scoreboard is filled in with whatever
+actually happened.
 
 ## Cost discipline
 
-Stop the box between milestones. M0–M3 need a GPU only for M1/M2 runs. M9 is the only
-milestone that wants the big card.
+Stop the box between milestones. M0 through M3 only need a GPU for the M1 and M2 runs.
+
+## How it actually went
+
+Four things in the plan above turned out to be wrong, and they're the useful part.
+
+M3 planned an equal-power crossfade. Equal-power is the right curve for uncorrelated
+signals, and two decodes of the same latents are nearly identical, so it added about 3 dB
+of bump at every seam. Then the sweep showed the crossfade was unnecessary at any curve:
+13 frames of overlap alone already matches a single-pass decode.
+
+M6 planned a KV cache. VITS is non-autoregressive, so there's no incremental generation
+to cache for, and its text encoder is bidirectional, so a cached prefix doesn't even
+describe itself once more text arrives. Measured drift on a shared 31-token prefix was
+57%. Replaced with clause-level caching, which is what was actually wanted.
+
+M2 and M4 assumed the profile would name the bottleneck. It named the biggest consumer,
+which is not the same thing. The decoder was 54.5% of GPU time and converting it was a
+real 5.67x, but when the assembled system was loaded in M9 the entire latency tail sat in
+the PyTorch front half. That became M10, which isn't in this plan.
+
+M9 was supposed to be the last milestone. Hitting the actual target took four more:
+front-half TensorRT, multi-GPU routing, the 3,200-session run, and a whole-pipeline
+speedup and cost measurement.
