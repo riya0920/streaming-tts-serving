@@ -88,10 +88,17 @@ constraint. Only instrumenting the whole system and loading it until it broke di
 - **Hardware-specific.** All numbers are RTX 6000 Ada. TensorRT 10.3 cannot build engines
   for Blackwell at all (`Unsupported SM: 0xc00` on an RTX 5090) — that needs TensorRT
   10.8+, i.e. Triton 25.02 or newer.
-- **Cross-request batching is disabled in the TRT front half.** The batched alignment is
-  incorrect for B>1 because each item predicts its own frame count. This costs throughput
-  at duty=1.0 (p99 119 → 208 ms at 128 continuous sessions) and costs nothing at duty=0.1,
-  where arrivals are spread. Fixing it properly is the top remaining item.
+- **Cross-request batching in the TRT front half was disabled for every number on this
+  page, and has since been enabled.** Every measurement above was taken with
+  `vits_frontend` looping over the batch one item at a time, which cost throughput at
+  duty=1.0 (p99 119 → 208 ms at 128 continuous sessions) and cost nothing at duty=0.1,
+  where arrivals are spread. The stated reason for the loop — that the alignment expansion
+  is wrong for B>1 — turned out to be untested and false; see
+  `tests/test_batched_alignment.py`, which runs ragged input both ways and gets bitwise
+  agreement. The genuine bug was in the prior sample, where the padded tail was filled with
+  noise instead of silence and the convolutional flow carried it back into played audio.
+  Both are fixed. **No number on this page has been re-measured since**, so the headline
+  results should be read as the floor of what the current code does, not the ceiling.
 - **`facebook/mms-tts-eng`**, 36M parameters, 16 kHz. A larger model would shift every
   number.
 

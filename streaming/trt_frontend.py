@@ -98,6 +98,15 @@ class TRTFrontend:
 
         # ---- sample the prior ------------------------------------------------
         z_p = m_p + torch.randn_like(m_p) * torch.exp(logs_p) * self.noise_scale
+        # Zero the tail past each item's own frame count before the flow sees it.
+        #
+        # Past that point m_p and logs_p are both zero, and exp(0) is 1, not 0 — so the
+        # sample above fills the padding with full-scale noise rather than silence. On its
+        # own that would be harmless, since the tail is trimmed at the end. But the flow is
+        # a stack of dilated convolutions: with a batch built at the longest item, that
+        # noise is inside the receptive field of the last real frames of every shorter
+        # item, and it leaks into audio that does get played.
+        z_p = z_p * output_padding_mask
 
         # ---- flow ------------------------------------------------------------
         # Pad up to the engine's MINIMUM profile length before calling it.

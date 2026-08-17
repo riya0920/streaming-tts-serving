@@ -139,6 +139,18 @@ Consequences:
 
 Every one of these passed shape checks, parity tests and latency metrics.
 
+**Zero mean and zero variance are not the same zero.** Past an item's own frame count in a
+padded batch, `m_p` and `logs_p` are both zero. Zero mean is silence; zero *log* variance
+is `exp(0) = 1`, so `m_p + randn * exp(logs_p) * noise_scale` fills the padded tail with
+full-scale noise. Trimming happens after the flow, so nothing downstream ever sees it — but
+the flow is dilated convolutions, and in a batch built at the longest item that noise sits
+inside the receptive field of the last real frames of every *shorter* item. Quiet
+corruption at the end of short utterances, only when batched, only alongside a longer one.
+Never fired in practice because the code looped over the batch instead, on a stated reason
+("the alignment is wrong for B>1") that I had never tested and that turned out to be false:
+batched and looped alignment agree bitwise. A wrong explanation kept a real bug alive by
+making the workaround look justified.
+
 **`set_input_shape` returns false, it does not raise.** A shape outside the TensorRT
 optimization profile leaves the context on its *previous* shape, so the output buffer is
 allocated from a stale shape and the caller gets a wrong-length tensor. It surfaced far

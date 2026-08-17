@@ -82,26 +82,17 @@ class TritonPythonModel:
             return capture_latents(self.model, input_ids=input_ids,
                                    attention_mask=attention_mask)
 
-        # One item at a time through the TRT path.
+        # One batched call through the TRT path.
         #
-        # The batched alignment is wrong for B>1: each item predicts its own duration and
-        # therefore its own frame count, so building one alignment matrix across the batch
+        # This used to loop one item at a time, on the belief that the alignment expansion
+        # was wrong for B>1 because every item predicts its own frame count. That belief
+        # was untested and it was wrong: tests/test_batched_alignment.py runs ragged input
+        # both ways and they agree exactly.
         #
-        # Looping is correct by construction. It gives up cross-request batching in this
-        # stage, but the stage is now ~6x faster per call, so the trade is worth taking
-        outs = []
-        for i in range(input_ids.shape[0]):
-            outs.append(self.trt(input_ids[i:i + 1], attention_mask[i:i + 1]))
-        if len(outs) == 1:
-            return outs[0]
-        # Pad to the longest so the caller's per-item trim (via NUM_FRAMES) still works.
-        tmax = max(o.shape[-1] for o in outs)
-        padded = []
-        for o in outs:
-            if o.shape[-1] < tmax:
-                o = torch.nn.functional.pad(o, (0, tmax - o.shape[-1]))
-            padded.append(o)
-        return torch.cat(padded, dim=0)
+        # What was actually broken sat one step later, in the prior sample. See the comment
+        # on the mask in streaming/trt_frontend.py. The loop had been hiding it, since a
+        # batch of one has no padding to leak.
+        return self.trt(input_ids, attention_mask)
 
     def execute(self, requests):
         try:

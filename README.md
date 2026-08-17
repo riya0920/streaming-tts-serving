@@ -137,9 +137,24 @@ passed every automated check I had.
 
 ## Still broken
 
-Cross-request batching is off in the TensorRT front half. Batched alignment comes out wrong
-for B>1 because each item predicts its own frame count, and I haven't fixed it properly.
-Costs throughput at duty=1.0, costs nothing at duty=0.1. Top of the list.
+Cross-request batching in the TensorRT front half is on now, but the throughput it was
+supposed to buy is unmeasured, because I fixed it after giving the GPUs back.
+
+The story is worth telling. I'd disabled batching because I thought the alignment
+expansion was wrong for B>1, each item predicting its own frame count. I never tested
+that. When I finally did, on CPU with stand-in engines, batched and looped agreed to the
+bit on ragged input. My stated reason was simply false.
+
+The real bug was one step later. Past an item's own frame count `m_p` and `logs_p` are
+zero, and `exp(0)` is 1, so the prior sample fills the padded tail with full-scale noise
+rather than silence. The flow is dilated convolutions, so in a batch built at the longest
+item that noise sits inside the receptive field of the last real frames of every shorter
+item and leaks into audio that gets played. One mask fixes it. Looping had hidden it for
+months, since a batch of one has no padding to leak.
+
+`tests/test_batched_alignment.py` covers both, and fails if you remove the mask. It runs on
+CPU in about a second. What it can't tell me is what batching is now worth at duty=1.0, so
+that number stays unclaimed until this runs on a box again.
 
 The A100 comparison is half-finished. Its session knee is bracketed somewhere between 400
 and 1,200 and I lost the raw artifacts when the pod terminated, so the docs mark it
