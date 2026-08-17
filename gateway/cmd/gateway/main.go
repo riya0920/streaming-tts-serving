@@ -6,8 +6,6 @@
 //
 // Go because holding thousands of streaming connections means thousands of goroutines
 // blocked on I/O, which costs kilobytes each rather than an OS thread each — and because
-// there is no GIL competing with the relay loop for CPU. It ships as one static binary
-// with predictable tail latency, which is the property this whole project is about.
 //
 // Two routes over the same models:
 //
@@ -211,9 +209,6 @@ func (s *server) pollQueueDepth() {
 	var lastCount, lastNs float64
 	// Triton's counters are cumulative and survive gateway restarts. Without this flag
 	// the first poll differences against zero, so the entire lifetime counter reads as
-	// one 500 ms sample — observed as queue_depth 885 on an idle gateway, which is well
-	// past the rejection threshold and would refuse every request until the next tick.
-	// Seed the baseline on the first poll and only start estimating from the second.
 	primed := false
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()

@@ -1,42 +1,5 @@
-"""
-Incremental synthesis for text that arrives in fragments — an LLM streaming a reply
+"""Incremental synthesis for text that arrives in fragments — an LLM streaming a reply
 clause by clause into TTS.
-
-Why this is not a KV cache
---------------------------
-The original design called for "KV-cache reuse": cache the text encoder's attention keys
-and values for tokens already seen, so an appended fragment only encodes the new tokens.
-That is the standard trick for autoregressive decoding, and it is **invalid here**.
-
-VITS's text encoder is **bidirectional**. Measured on `facebook/mms-tts-eng`: appending
-" with that today" to "Sure, I can help" changes the encoding of the *original 31 tokens*
-by 57% relative. Every token attends to every other token in both directions, so an
-earlier token's representation genuinely depends on later ones. Reusing cached K/V would
-produce confidently wrong prosody — and nothing in a shape check, a parity test or a
-latency metric would notice, because the tensors would all be the right size and the
-audio would still sound like speech.
-
-What works instead
-------------------
-Synthesize at **clause boundaries**. Each clause is encoded independently, so
-bidirectional attention inside it is complete and correct, and no cross-clause reuse is
-attempted. Two things fall out of that:
-
-  1. **Latency**: the first clause is synthesized as soon as it is complete, rather than
-     waiting for the whole reply. That is the same trick as chunked decoding, applied one
-     level up — and it works even for a model whose encoder cannot be cached.
-
-  2. **Reuse**: assistant speech repeats heavily ("Sure.", "One moment.", "Anything
-     else?"), and a clause is a pure function of its own text. Caching latents keyed on
-     the normalized clause is therefore exact, not approximate — unlike a KV cache, which
-     would be approximate and wrong.
-
-  feed = IncrementalSynthesizer(latents_fn)
-  for fragment in llm_stream:
-      for clause_latents in feed.push(fragment):
-          ...decode and ship...
-  for clause_latents in feed.flush():
-      ...
 """
 
 from __future__ import annotations
@@ -109,10 +72,6 @@ class IncrementalSynthesizer:
         """
         # Join with a space when neither side supplies one. The tail re-buffered below
         # comes back from split_for_streaming already stripped, so without this a
-        # fragment boundary silently welds two words together — "four fifteen." followed
-        # by "Boarding starts" became "fifteen.Boarding", which the tokenizer then reads
-        # as a single word and speaks as one. Audio stays fluent-sounding, so nothing
-        # downstream flags it.
         if self._buf and fragment and not self._buf[-1].isspace() \
                 and not fragment[0].isspace():
             self._buf += " "

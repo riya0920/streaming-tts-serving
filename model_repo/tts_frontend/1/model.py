@@ -1,20 +1,4 @@
-"""
-Triton Python backend: text -> token ids.
-
-Deliberately thin. All the actual rules live in streaming/text_norm.py, which is
-importable and tested without a server (tests/test_text_norm.py). This file is only the
-Triton adapter.
-
-Why Python for this at all, when the streaming loop next door is C++: this code runs
-**once per utterance**, off the hot path, and it changes constantly as new text patterns
-turn up in production. Rewriting it in C++ would cost weeks and save nothing measurable.
-The rule for this project is Python where the code changes, C++ where the latency lives.
-
-Note on phonemization: mms-tts-eng uses a character-level tokenizer, so there is no
-grapheme-to-phoneme step — normalization goes straight to token ids. A phoneme-based
-VITS (e.g. an LJSpeech checkpoint) would insert espeak-ng here, which is why the serving
-image installs it.
-"""
+"""Triton Python backend: text -> token ids."""
 
 import json
 import os
@@ -87,8 +71,6 @@ class TritonPythonModel:
 
         # NORMALIZED_TEXT is returned for observability, not for the pipeline: when a
         # user reports that the audio said something odd, the first question is always
-        # what the normalizer did to their input, and it is far cheaper to have that in
-        # the trace than to reproduce it later.
         return pb_utils.InferenceResponse(output_tensors=[
             pb_utils.Tensor("INPUT_IDS", ids),
             pb_utils.Tensor("ATTENTION_MASK", mask),

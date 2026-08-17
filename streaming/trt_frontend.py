@@ -1,32 +1,4 @@
-"""
-TensorRT-backed VITS front half: token ids -> decoder latents.
-
-This replaces the PyTorch path that M9 measured as **100% of the latency tail** (p50
-150 ms, p99 1000 ms at load, while every other stage stayed under 20 ms). The decoder had
-already been converted and never appeared in the tail at all.
-
-Three engines and two small PyTorch steps:
-
-    input_ids ──[TRT encoder]──> hidden, prior_means, prior_log_variances
-              ──[TRT duration]──> log_duration          (noise supplied per request)
-              ──  alignment  ──> expand priors to frames        (PyTorch)
-              ──   sample    ──> z_p = m + eps*exp(logs)*scale  (PyTorch)
-              ──[TRT flow]───> latents
-
-Why the two middle steps stay in PyTorch: the alignment expansion is a cumsum, a
-comparison and a matmul — cheap, and awkward to express with dynamic shapes in a graph.
-The z_p sampling is one elementwise line. Neither is worth an engine, and both are
-measured as negligible.
-
-The thing to be careful about
------------------------------
-The duration predictor's randomness is what makes VITS sound natural — it is why the same
-sentence gets slightly different rhythm each time. Hoisting `randn` into a graph input
-made the module exportable, but it also moved responsibility for that randomness *here*.
-Fresh noise must be drawn per request. Reusing a buffer would make every utterance
-identical in rhythm, and nothing in a shape check, a parity test, or a latency metric
-would notice.
-"""
+"""TensorRT-backed VITS front half: token ids -> decoder latents."""
 
 from __future__ import annotations
 
@@ -74,10 +46,6 @@ class TRTFrontend:
         })
         # Promote to fp32 immediately. The engines return half precision, and the
         # alignment math that follows takes exp() of a duration — in fp16 that overflows
-        # to inf above ~11, inf survives ceil() and sum(), and .long() then yields a
-        # garbage length. It surfaced as "upper bound and larger bound inconsistent with
-        # step sign" from torch.arange, which points nowhere near the actual cause.
-        # The tensors here are tiny; the cast costs nothing.
         hidden = hidden.float().transpose(1, 2).contiguous()
         m_p = m_p.float().transpose(1, 2).contiguous()
         logs_p = logs_p.float().transpose(1, 2).contiguous()
@@ -86,8 +54,6 @@ class TRTFrontend:
 
         # ---- duration predictor ---------------------------------------------
         # Fresh noise, every call. This is the randomness that gives VITS its natural
-        # rhythm; a cached buffer here would make every utterance scan identically and
-        # would pass every automated check.
         noise = torch.randn(B, 2, input_ids.shape[1], device=dev,
                             dtype=hidden.dtype) * self.noise_scale_duration
         log_duration = self.dur({
@@ -102,13 +68,6 @@ class TRTFrontend:
         #
         # exp(5) is ~148 frames — 2.4 s of audio for one token, already far beyond any
         # real phoneme. The earlier exp(9) bound allowed ~8,100 frames from one token,
-        # which is how utterances ended up exceeding the flow engine's 2,048-frame
-        # profile and silently getting stale output shapes.
-        # NaN first — clamp does NOT filter it. An fp16 NaN from the engine survives
-        # clamp, survives exp, survives ceil, survives sum, and then .long() turns it
-        # into an arbitrary integer that slips past both the min and max bounds. It
-        # surfaced as torch.arange complaining about step sign on ~3% of requests, long
-        # after the actual corruption.
         log_duration = torch.nan_to_num(log_duration, nan=0.0, posinf=5.0, neginf=-5.0)
         log_duration = torch.clamp(log_duration, max=5.0)
         duration = torch.ceil(torch.exp(log_duration) * input_padding_mask * length_scale)
@@ -119,11 +78,6 @@ class TRTFrontend:
 
         # ---- alignment expansion --------------------------------------------
         # Mirrors VitsModel.forward: turn per-token durations into a hard monotonic
-        # alignment matrix, then use it to stretch the priors from token resolution to
-        # frame resolution.
-        # Belt and braces: even with the NaN scrub above, T is the one value that would
-        # corrupt every tensor downstream, so bound it explicitly rather than trusting
-        # the arithmetic that produced it.
         T = int(predicted_lengths.max().item())
         T = max(1, min(T, self.max_frames))
         idx = torch.arange(T, device=dev, dtype=predicted_lengths.dtype)
@@ -150,9 +104,6 @@ class TRTFrontend:
         #
         # This is the mirror of the max-side guard, and it is the one that actually fired:
         # a short reply like "Sure." is ~12 latent frames, below the flow engine's 16-frame
-        # minimum. TensorRT rejects that shape, and because set_input_shape signals failure
-        # by return value rather than by raising, the original symptom was a stale output
-        # shape surfacing as an unrelated broadcast error.
         #
         # The padding is trimmed straight back off, so it only ever costs a few frames of
         # wasted compute on the shortest utterances — the same trade the C++ decoder

@@ -3,25 +3,15 @@
 //
 // This is the hot loop. It runs many times per second per session, across every
 // session, and it is in C++ for a reason that is about variance rather than mean: a
-// Python loop that costs 0.4 ms on average but occasionally 9 ms — because a GC pass or
-// GIL contention landed badly — is fine for the p50 and fatal for the p99. The p99 is
-// the number this project exists to defend.
 //
 // What it does per request:
 //   1. take latents [1, C, T] produced by vits_frontend
-//   2. plan chunks using M3's progressive sizing (small first chunk for TTFA, growing)
-//   3. for each chunk, decode [a-P, b+P) through the TensorRT engine, where P is the
-//      measured 13-frame receptive field
-//   4. trim the contaminated context back off, convert float32 to 16-bit PCM
-//   5. send that chunk as its own response, immediately, while later chunks decode
 //
 // Decoupled mode is what makes step 5 possible: one request, many responses over time.
 // Without it, streaming would have to be bolted on top of a request/response server.
 //
 // No crossfade. M3 measured chunk seams against a single-pass decode at step-ratio
 // 10.25 vs 10.26 — indistinguishable — once overlap is at or above the receptive field.
-// The blend that the original design treated as essential turned out to be solving a
-// problem the overlap had already solved.
 
 #include <cuda_runtime_api.h>
 #include <NvInfer.h>
@@ -221,8 +211,6 @@ ModelState::LoadEngine()
 //
 // Buffers are allocated once at the maximum chunk shape and reused for every chunk of
 // every request. Allocating per chunk would put a cudaMalloc — which synchronizes — in
-// the middle of the hot loop, and the resulting jitter lands directly on the p99.
-//==============================================================================
 class ModelInstanceState : public BackendModelInstance {
  public:
   static TRITONSERVER_Error* Create(ModelState* ms, TRITONBACKEND_ModelInstance* mi,
@@ -245,8 +233,6 @@ class ModelInstanceState : public BackendModelInstance {
   std::unique_ptr<nvinfer1::IExecutionContext> ctx_;
   // Explicitly the global CUDA type. Triton's backend_common.h declares its own
   // `cudaStream_t` as void* when TRITON_ENABLE_GPU is unset, and since this class lives
-  // in namespace triton::backend, an unqualified name binds to that one instead — which
-  // compiles as far as the declaration and then fails at the first CUDA call.
   ::cudaStream_t stream_{nullptr};
 
   float* d_in_{nullptr};
@@ -291,8 +277,6 @@ ModelInstanceState::Init()
 
   // Warm every window shape the chunk planner can produce. M3 measured the first decode
   // of a new tensor shape at ~66 ms against ~4.9 ms steady-state, because TensorRT and
-  // cuDNN pick and cache an algorithm per shape. Paying that on a live request would put
-  // a 60 ms spike straight into the p99 of whichever unlucky session hit it first.
   std::vector<float> zeros(in_elems, 0.0f);
   TTS_CUDA_CHECK(
       cudaMemcpyAsync(d_in_, zeros.data(), in_elems * sizeof(float),
@@ -343,9 +327,6 @@ ModelInstanceState::DecodeWindow(const float* latents_host, int64_t total_frames
 
   // The TensorRT engine's optimization profile has a minimum frame count, and a short
   // utterance — or a one-frame remainder near the end of one — can produce a window
-  // below it. TensorRT rejects that outright ("does not satisfy any optimization
-  // profiles"), failing the whole request, which is how a two-word reply took down a
-  // stream that worked fine for everything longer.
   //
   // Zero-pad up to the minimum. The padding sits past the audio we keep, so it only
   // ever contributes to context that gets trimmed away.
@@ -466,8 +447,6 @@ ModelInstanceState::ProcessRequests(TRITONBACKEND_Request** requests, uint32_t c
 
     // ---- plan chunks: progressive sizing, per M3 -------------------------------
     // Only the first chunk sets time-to-first-audio. Later chunks grow so the overlap
-    // tax (68% at a 12-frame chunk, 34% at 50) is amortized while the listener is
-    // already hearing audio.
     std::vector<std::pair<int64_t, int64_t>> chunks;
     {
       int64_t a = 0, size = model_state_->FirstChunkFrames();

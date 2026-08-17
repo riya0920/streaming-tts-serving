@@ -1,20 +1,5 @@
-"""
-End-to-end client for the Triton streaming pipeline — and the first real measurement of
+"""End-to-end client for the Triton streaming pipeline — and the first real measurement of
 time-to-first-audio through a server rather than an in-process function call.
-
-Pipeline, three hops:
-
-    text --> tts_frontend  --> input_ids
-         --> vits_frontend --> latents [1, C, T]
-         --> tts_stream    --> audio chunks, streamed  (decoupled)
-
-The orchestration lives here rather than in Triton because the Go gateway (M7) will own
-it in production: it is control-plane work — sessions, routing, admission — not inference.
-This module is the reference implementation the gateway is built to match, and the thing
-that proves the backends work before any Go exists.
-
-  python streaming/client.py --text "Sure, I can help with that." --out out.wav
-  python streaming/client.py --bench 20
 """
 
 from __future__ import annotations

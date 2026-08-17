@@ -1,18 +1,4 @@
-"""
-Per-stage timing of a VITS forward pass, plus a launch-overhead test.
-
-M2's first pass showed the HiFi-GAN decoder is only ~11% of a forward pass and that its
-cost barely grows with sequence length — both of which contradict the assumption the
-chunked-streaming design was built on. Before redesigning, measure where the time
-actually is, stage by stage, and establish whether the model is compute-bound or
-kernel-launch-bound.
-
-Method: CUDA events around each submodule via forward hooks. CUDA is asynchronous, so
-wall-clock timers around a submodule measure queueing, not execution; events are recorded
-in-stream and give real device time.
-
-  python export/profile_stages.py --iters 50
-"""
+"""Per-stage timing of a VITS forward pass, plus a launch-overhead test."""
 
 from __future__ import annotations
 
@@ -140,8 +126,6 @@ def main() -> None:
 
     # ---- launch-bound test ------------------------------------------------
     # If time barely grows with sequence length, the model is dominated by per-kernel
-    # launch overhead, not arithmetic. That changes which optimizations matter:
-    # fusion, CUDA graphs and batching help; slicing the work into more calls hurts.
     print("\ndecoder scaling (is it launch-bound?)")
     flow_ch = int(getattr(model.config, "flow_size", 192))
     scale = {}

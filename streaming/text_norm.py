@@ -1,18 +1,4 @@
-"""
-Text normalization for TTS — turning written English into speakable English.
-
-Kept as a plain module, not buried inside the Triton backend, because this is the part
-of the system that changes constantly and it needs to be testable without standing up a
-server. `model_repo/tts_frontend/1/model.py` is a thin wrapper over this.
-
-This is exactly the code that belongs in Python: dense, rule-heavy, string-munging logic
-that runs **once per utterance** and is nowhere near the hot path. Rewriting it in C++
-would cost weeks and buy nothing — the C++ budget goes to the per-chunk loop instead.
-
-Order matters throughout. Currency has to run before bare numbers or "$45" becomes
-"dollar sign forty-five"; abbreviations have to run before sentence splitting or "Dr."
-ends the sentence.
-"""
+"""Text normalization for TTS — turning written English into speakable English."""
 
 from __future__ import annotations
 

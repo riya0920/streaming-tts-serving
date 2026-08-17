@@ -1,18 +1,4 @@
-"""
-Generate A/B audio for the FP16 decision.
-
-The FP16 error measures at 1.52 dB log-spectral distance, which the usual rule of thumb
-calls "marginal" — between transparent (<1 dB) and audible (>2 dB). Those thresholds are
-heuristics, not measurements, and the decision they feed is whether a listener notices.
-So: render the same utterances through each backend and listen.
-
-All three paths decode identical latents, so the only variable is the decoder backend.
-The TensorRT paths use the real serving geometry — 76-frame windows, 50 frames kept,
-13 frames of context trimmed off each side — so what you hear is what the deployed
-system would produce, seams and all.
-
-  python export/make_ab_audio.py --outdir results/audio
-"""
+"""Generate A/B audio for the FP16 decision."""
 
 from __future__ import annotations
 

@@ -1,28 +1,4 @@
-"""
-M3 — sweep chunk size and overlap, and measure what each costs.
-
-The chunking parameters were guessed in the original design and then corrected once by
-measurement (docs/PROFILE.md). This script replaces guessing entirely: for each candidate
-setting it reports time-to-first-audio, how much decode is wasted on overlap, and — the
-part that actually decides correctness — how badly the chunked output differs from a
-single-pass decode.
-
-The comparison is exact because both sides consume **identical latents**. The stochastic
-duration predictor samples fresh noise per call, so synthesizing the same text twice gives
-different alignments and different lengths; without pinning the latents there is nothing
-to diff against and any "artifact metric" would mostly be measuring resampling noise.
-
-Two error figures are reported:
-
-  global SNR      chunked vs single-pass over the whole utterance
-  seam SNR        the same, restricted to windows centred on chunk boundaries
-
-Seam SNR is the one that matters. A high global SNR can still hide a click, because a
-2 ms discontinuity contributes almost nothing to whole-utterance energy and everything to
-what a listener notices.
-
-  python streaming/sweep.py
-"""
+"""M3 — sweep chunk size and overlap, and measure what each costs."""
 
 from __future__ import annotations
 

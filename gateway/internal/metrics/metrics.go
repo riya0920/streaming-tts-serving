@@ -2,13 +2,9 @@
 //
 // Every latency metric is a histogram. Not a gauge, not a summary of averages — a
 // histogram. An average latency of 180 ms can sit on top of a p99 of 4 seconds, and the
-// p99 is the only number a voice interface cares about: the mean describes a user who
-// does not exist while the tail describes the one who hangs up.
 //
 // Bucket boundaries are chosen around the 150 ms target rather than left at the client
 // library's defaults. Prometheus' defaults top out at 10 s with coarse spacing below
-// 100 ms, which would put nearly every observation in one bucket and make the number we
-// care about unreadable.
 package metrics
 
 import (

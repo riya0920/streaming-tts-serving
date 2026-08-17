@@ -1,26 +1,4 @@
-"""
-Triton Python backend: token ids -> decoder latents.
-
-VITS's front half — text encoder, stochastic duration predictor, flow. M9 measured this
-stage as **100% of the latency tail** (p50 150 ms, p99 1000 ms under load, while every
-other stage stayed under 20 ms), so it, not the decoder, set the concurrency ceiling.
-
-It now runs on TensorRT. Measured on an RTX 6000 Ada:
-
-    duration predictor   11.465 -> 1.906 ms   6.01x
-    flow (T=400)          5.742 -> 0.864 ms   6.65x
-
-Two backends, selectable at load time
--------------------------------------
-`backend=trt` uses the engines. `backend=torch` keeps the original PyTorch path, which
-stays because it is the reference the TRT path is validated against and the fallback if
-an engine is missing or was built for a different GPU architecture. Engines are not
-portable across cards; a pod that comes up with a different GPU should degrade to a
-slower correct answer rather than fail to load.
-
-Batching still applies to either path: M2 showed the model is launch-bound, which is the
-regime where batching is nearly free, and M9's ramp confirmed it doubled the knee.
-"""
+"""Triton Python backend: token ids -> decoder latents."""
 
 import json
 import os
@@ -83,8 +61,6 @@ class TritonPythonModel:
 
         # Warm the shapes the gateway's 16-token bucketing produces. cuDNN and TensorRT
         # both pick an algorithm per shape on first use; M3 measured that first touch at
-        # ~66 ms against ~4.9 ms steady state, which would otherwise land on a live
-        # request as a latency spike.
         with torch.inference_mode():
             for b in (1, 4, 8):
                 for s in (16, 48, 96):
@@ -110,15 +86,9 @@ class TritonPythonModel:
         #
         # The batched alignment is wrong for B>1: each item predicts its own duration and
         # therefore its own frame count, so building one alignment matrix across the batch
-        # mixes a padded token length with another item's frame count. Under load this
-        # produced "size of tensor a (208) must match tensor b (688)" on ~24% of requests,
-        # where 208 is a bucketed token length and 688 a frame count. Single requests
-        # never hit it, which is why it survived the unit check.
         #
         # Looping is correct by construction. It gives up cross-request batching in this
         # stage, but the stage is now ~6x faster per call, so the trade is worth taking
-        # over shipping a batched path that is wrong 24% of the time. Batching the
-        # variable-length alignment properly is a separate change.
         outs = []
         for i in range(input_ids.shape[0]):
             outs.append(self.trt(input_ids[i:i + 1], attention_mask[i:i + 1]))

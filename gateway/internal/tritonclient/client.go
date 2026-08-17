@@ -41,11 +41,6 @@ func Dial(addr string) (*Client, error) {
 		grpc.WithInitialConnWindowSize(1<<20),
 		// Keepalive must stay inside the SERVER's tolerance, not just be "frequent
 		// enough". Triton enforces a minimum ping interval and answers anything faster
-		// with GOAWAY ENHANCE_YOUR_CALM ("too_many_pings"), which tears down the
-		// connection and fails every in-flight request. A 30s interval with
-		// PermitWithoutStream did exactly that under sustained load — the load test
-		// returned zero completions because the transport had been killed, not because
-		// the models were slow.
 		//
 		// 5 minutes with pings only while streams are active stays well within the
 		// default policy, and streaming sessions keep the connection warm anyway.
@@ -199,8 +194,6 @@ type Latents struct {
 //
 // Triton's dynamic batcher only groups requests whose non-batch dimensions match, so
 // unbucketed token lengths would almost never batch — every utterance is a different
-// length. Rounding to a bucket makes batching actually happen, at the cost of a few
-// padded positions that attention_mask marks as ignorable.
 //
 // 16 is small enough that padding waste stays under ~15% for typical utterances and
 // large enough that the common short replies collapse into one or two buckets.

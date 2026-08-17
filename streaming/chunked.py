@@ -1,35 +1,4 @@
-"""
-Chunked streaming synthesis for VITS — the piece the whole latency claim rests on.
-
-The naive way to "stream" TTS is to synthesize the whole utterance and then send the WAV
-in pieces. That does nothing for time-to-first-audio: you still wait for the entire
-decode. Here the decoder runs in slices instead, so the first ~200 ms of audio ships
-while the rest is still being generated, and TTFA stops depending on utterance length.
-
-Structure of one utterance:
-
-    text encoder -> duration predictor -> flow          ... once, up front, cheap
-    decoder (HiFi-GAN)                                  ... sliced, this is ~all the time
-
-Two subtleties, both handled below:
-
-1. **How we get the latents.** Rather than reimplementing VITS's front half (alignment
-   expansion, stochastic duration sampling, flow inversion — intricate and sensitive to
-   the transformers version), we let the model run its own forward pass with the decoder
-   swapped for a capture stub. The stub records the latents and returns a dummy, so the
-   expensive decode never happens. We then drive the real decoder ourselves. This reuses
-   upstream's exact logic and does not drift when transformers changes internals.
-
-2. **Boundary artifacts.** The decoder is convolutional with a wide receptive field.
-   Slicing latents and decoding each slice in isolation makes the seams click, because
-   each slice's edges were computed without their neighbours. So each chunk is decoded
-   with `overlap_frames` of context on both sides, trimmed back to its valid centre, and
-   adjacent chunks are joined with an equal-power crossfade.
-
-Equal-power (cos/sin), not linear: the two signals being blended are two renderings of
-the same underlying latents, so they are highly correlated, and a linear fade dips in
-perceived loudness at the midpoint.
-"""
+"""Chunked streaming synthesis for VITS — the piece the whole latency claim rests on."""
 
 from __future__ import annotations
 
@@ -52,8 +21,6 @@ class ChunkConfig:
     #
     # Only the FIRST chunk needs to be small: it sets time-to-first-audio. After that the
     # listener is already hearing audio, so later chunks should amortize the overlap tax
-    # instead of minimising latency. Chunk size therefore grows by `growth` up to
-    # `max_chunk_ms`.
     first_chunk_ms: float = 200.0
     max_chunk_ms: float = 800.0
     growth: float = 2.0
@@ -65,9 +32,6 @@ class ChunkConfig:
     #
     # With overlap at or above the receptive field, chunk seams already match a
     # single-pass decode — measured seam step-ratio 10.25 chunked against 10.26
-    # unchunked, i.e. the boundary is indistinguishable from ordinary waveform motion.
-    # A linear fade leaves that unchanged (it is mathematically neutral for correlated
-    # signals) and an equal-power fade makes it worse.
     #
     # Kept, at zero, because FP16 and TensorRT will make the two decodes differ more
     # than FP32 does; if a seam ever reappears, this is the knob, and M3's data says
@@ -77,11 +41,6 @@ class ChunkConfig:
     #
     # Linear is correct here, and this was originally wrong. Equal-power is the right
     # choice when blending UNCORRELATED signals, where powers add and a linear fade dips
-    # ~3 dB at the midpoint. The two signals blended here are the same audio decoded with
-    # slightly different context, so they are almost perfectly CORRELATED — amplitudes
-    # add, and cos(t)x + sin(t)x peaks at sqrt(2)*x, putting a +3 dB bump on every seam.
-    # Measured: equal_power made seam SNR worse the longer the fade (31.6 dB at 0 ms
-    # falling to 11.6 dB at 10 ms). Linear satisfies (1-t)x + t*x = x exactly.
     crossfade_shape: str = "linear"
     noise_scale: float = 0.667
     noise_scale_duration: float = 0.8

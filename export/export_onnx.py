@@ -1,27 +1,4 @@
-"""
-M4 — export the two hot submodules to ONNX, ready for TensorRT.
-
-What gets exported and what does not, from the M2 profile:
-
-  text_encoder   8.4% of GPU time    -> exported. Small, clean, and the KV-cache work
-                                        in M6 builds on it.
-  decoder        54.5%               -> exported. The main event, and launch-bound, so
-                                        TensorRT's kernel fusion attacks the actual
-                                        bottleneck rather than a bandwidth limit this
-                                        model does not have.
-  duration_predictor  21.9%          -> NOT exported (yet). It is the *stochastic*
-  flow                14.2%             variant: it samples randn internally, so the
-                                        graph is not a pure function of its inputs.
-                                        Exportable by hoisting the noise into an input,
-                                        which is worth doing, but it is a separate change
-                                        and the flow layers are the numerically touchy
-                                        part in half precision. Left in FP32 PyTorch.
-
-Leaving 36% of GPU time in PyTorch caps the achievable speedup near 1.6x on the model
-alone. That is a deliberate, stated limit, not an oversight — see docs/PROFILE.md.
-
-  python export/export_onnx.py
-"""
+"""M4 — export the two hot submodules to ONNX, ready for TensorRT."""
 
 from __future__ import annotations
 

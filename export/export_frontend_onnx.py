@@ -1,32 +1,4 @@
-"""
-M10 — export VITS's front half: the stochastic duration predictor and the flow.
-
-This is the piece M4 skipped and M9 proved was the whole problem. The gateway's own
-histograms put 100% of the latency tail in this stage (p50 150 ms, p99 1000 ms at 32
-sessions, while every other stage stays under 20 ms), and the load test showed the knee
-arrives at ~2% GPU utilization — so the system is latency-bound on exactly this code.
-
-Why it was skipped, and how that is solved here
------------------------------------------------
-`VitsStochasticDurationPredictor` draws `torch.randn` *inside* its reverse pass. A module
-that samples its own noise is not a pure function of its inputs, so tracing it bakes one
-fixed noise draw into the graph as a constant — every utterance would then get identical
-durations, and the prosody variation that makes VITS sound natural would vanish.
-
-The fix is to hoist the noise into a graph **input**. Rather than reimplementing the
-reverse flow loop — intricate, and it would silently drift when transformers changes —
-`torch.randn` is swapped for a function returning the caller-supplied tensor for the
-duration of the trace. The tracer records that tensor as an input, so the exported graph
-takes noise as an argument and stays a pure function. At serve time the backend draws
-fresh noise per request, exactly as PyTorch did.
-
-The flow (`VitsResidualCouplingBlock`) needs none of this: its reverse pass is already
-deterministic given `z_p`. The randomness upstream of it lives in `VitsModel.forward`,
-which samples `z_p = m_p + randn_like(m_p) * exp(logs_p) * noise_scale`. That one line
-stays in Python — it is a single elementwise op, not worth an engine.
-
-  python export/export_frontend_onnx.py
-"""
+"""M10 — export VITS's front half: the stochastic duration predictor and the flow."""
 
 from __future__ import annotations
 

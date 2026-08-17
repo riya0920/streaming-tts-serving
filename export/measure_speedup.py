@@ -1,25 +1,4 @@
-"""
-Measure whole-pipeline GPU time, PyTorch vs TensorRT, and derive cost per audio-minute.
-
-The résumé claim this settles is "cut per-request GPU time by 62% and inference cost by
-41%". Per-stage speedups (decoder 5.67x, duration predictor 6.01x, flow 7.77x) do not
-answer it: Amdahl decides the whole-model figure, and cost needs a stated model rather
-than a vibe. Both are computed here on the same card, same utterances, same session.
-
-Timing uses CUDA events, not wall clock — CUDA is asynchronous, so a wall-clock timer
-around a GPU call measures queueing rather than execution.
-
-Cost model, stated so it can be argued with:
-
-    gpu_seconds_per_audio_minute = (gpu_seconds_per_request / audio_seconds_per_request) * 60
-    dollars_per_audio_minute     = gpu_seconds_per_audio_minute * (price_per_hour / 3600)
-
-This deliberately counts only GPU occupancy. It ignores CPU, network and idle headroom —
-all of which make real cost higher and none of which shrink proportionally, so the honest
-reading is that cost falls by *less* than GPU time does.
-
-  python export/measure_speedup.py --price-per-hour 0.90
-"""
+"""Measure whole-pipeline GPU time, PyTorch vs TensorRT, and derive cost per audio-minute."""
 
 from __future__ import annotations
 

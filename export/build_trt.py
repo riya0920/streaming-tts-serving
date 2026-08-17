@@ -1,24 +1,4 @@
-"""
-M4 — build TensorRT engines from the exported ONNX, then prove they are worth using.
-
-Building an engine is easy; the part that matters is answering two questions with data:
-
-  1. Is it actually faster, at the shapes we serve? The M2 profile says this model is
-     launch-bound below ~192 frames, so the win should come from kernel fusion collapsing
-     ~40 small convolutions into far fewer launches — not from FP16 halving bytes moved.
-     If FP16 and FP32 engines perform the same, that confirms fusion is doing the work,
-     and it means precision can be traded back for quality at no cost.
-
-  2. Is FP16 audibly worse? Compared against the FP32 PyTorch decoder on real latents,
-     using SNR and log-spectral distance. VITS flow layers are numerically touchy in half
-     precision; the decoder is convolutional and should be fine, but "should be" is not a
-     measurement.
-
-Engines are built with optimization profiles matching M3's progressive chunk shapes.
-Getting those wrong shows up as a hard failure at serve time, not a slowdown.
-
-  python export/build_trt.py
-"""
+"""M4 — build TensorRT engines from the exported ONNX, then prove they are worth using."""
 
 from __future__ import annotations
 
@@ -101,9 +81,6 @@ class TRTRunner:
             t = t.contiguous()
             # set_input_shape returns False for a shape outside the engine's optimization
             # profile and does NOT raise. The context keeps its previous shape, the output
-            # buffer is then allocated from that stale shape, and the caller gets a tensor
-            # of the wrong length — which surfaces far away as a broadcast mismatch
-            # naming two unrelated dimensions. Fail here, where the cause is visible.
             if not self.ctx.set_input_shape(n, tuple(t.shape)):
                 lo, hi = None, None
                 try:

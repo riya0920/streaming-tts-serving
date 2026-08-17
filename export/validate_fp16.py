@@ -1,25 +1,4 @@
-"""
-M4 — does FP16 cost audible quality?
-
-Supersedes the quality check that was embedded in build_trt.py, which was wrong: it
-decoded each utterance in 76-frame pieces with NO overlap and compared against a
-single-pass reference, so it measured chunk-boundary artifacts (M3 put those at ~4 dB
-SNR on their own) and attributed them to precision.
-
-The fix is to compare like with like. Every comparison here decodes **the same window**
-through different backends and looks only at the valid centre — the region M3 showed is
-unaffected by window edges. No chunking, no stitching, nothing to confound the result.
-
-Three comparisons, because "FP16 is worse" is not one claim but two:
-
-  TRT FP32 vs PyTorch FP32   conversion error alone (graph rewrite, fusion, tactics)
-  TRT FP16 vs PyTorch FP32   what a user would actually hear
-  TRT FP16 vs TRT FP32       precision alone, with conversion held constant
-
-If the first is already large, precision is not the story and the engine build is.
-
-  python export/validate_fp16.py
-"""
+"""M4 — does FP16 cost audible quality?"""
 
 from __future__ import annotations
 

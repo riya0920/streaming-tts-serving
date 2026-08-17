@@ -8,9 +8,6 @@
 //
 //  2. Duty cycle. A held session in a voice agent is not synthesizing continuously — it
 //     speaks in short turns and then waits. "3,200 concurrent sessions" and "3,200
-//     simultaneous synthesis streams" differ by an order of magnitude, and conflating
-//     them is the single easiest way to publish a number that does not survive a
-//     follow-up question. Both are reported, with the duty cycle stated.
 //
 //  3. Underruns, not just latency. A stream that delivers every chunk late still
 //     "succeeds" by a latency metric while sounding broken. Each chunk is checked
@@ -122,10 +119,6 @@ func oneSession(ctx context.Context, url string, corpus []string, rng *rand.Rand
 	//
 	// The spread must scale with duty cycle, which the first version got wrong: it
 	// jittered over a fixed 6 s while a session at duty=0.1 has a ~60 s cycle. Every
-	// session therefore fired inside the first 6 s and then went idle, and 400 held
-	// sessions looked like 400 simultaneous arrivals (p99 1473 ms) instead of ~40
-	// concurrently speaking. A session cycle is roughly meanUtteranceSeconds/duty, so
-	// spread the starts over exactly that.
 	cycle := meanUtteranceSeconds / duty
 	phase := time.Duration(rng.Float64() * cycle * float64(time.Second))
 	select {
@@ -211,16 +204,9 @@ func oneSession(ctx context.Context, url string, corpus []string, rng *rand.Rand
 			//
 			// This was wrong in the first version and it invalidated the headline
 			// number: idling only for a *fraction* of the audio meant duty=1.0 left no
-			// think time at all, so each session looped as fast as the server would
-			// answer — about 66x real time. Sixteen such sessions are not sixteen
-			// listeners, they are sixteen batch jobs, and calling that "16 concurrent
-			// sessions" would overstate capacity by nearly two orders of magnitude.
 			//
 			// A session must occupy audioSeconds/duty of wall time per utterance:
 			// at duty=1.0 it speaks continuously in real time, at duty=0.1 it speaks
-			// for a tenth of the wall clock, which is what a voice agent taking short
-			// turns actually looks like. Synthesis time already elapsed counts toward
-			// that budget.
 			if duty > 0 {
 				budget := time.Duration(d.AudioSeconds / duty * float64(time.Second))
 				if idle := budget - time.Since(start); idle > 0 {

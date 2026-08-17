@@ -1,212 +1,122 @@
 # streaming-tts-serving
 
-Low-latency streaming text-to-speech serving. VITS on Triton Inference Server with
-TensorRT FP16 engines, incremental chunked decoding, and a Go control plane in front.
+Streaming TTS on Triton. VITS, TensorRT FP16, chunked decoding, Go gateway in front.
 
-The question driving this: **what does it take to serve a TTS model such that the first
-audio chunk arrives in under 150 ms at the p99, not at the mean, under real concurrency?**
+The goal was a first audio chunk in under 150ms at p99 (not mean) with real concurrency.
 
-Everything here flows from one tension — low latency wants tiny batches served
-immediately, GPU efficiency wants big batches — and the whole design is the resolution
-of that fight.
+## Numbers
 
----
+Measured on 2x RTX 6000 Ada. Raw JSON in `results/`, caveats in [docs/RESULTS.md](docs/RESULTS.md).
 
-## Status
-
-**Complete and measured on 2× NVIDIA RTX 6000 Ada.** Every number below was produced on
-real hardware with the raw artifact committed under `results/`. Full detail and caveats:
-[docs/RESULTS.md](docs/RESULTS.md).
-
-| Metric | Baseline (FastAPI) | Measured | Target |
-|---|---|---|---|
-| **Held sessions @ 10% duty** | — | **3,200** (2 GPUs) | 3,200 ✅ |
-| **TTFA p99 at 3,200** | n/a — no streaming | **113.8 ms** | < 150 ms ✅ |
-| TTFA p50 at 3,200 | n/a | **26.3 ms** | < 80 ms ✅ |
-| Underruns / rejections | n/a | **0 / 0** | 0 ✅ |
-| Aggregate real-time factor | 85–96x | **350x** | — |
-| Decoder speedup (TensorRT FP16) | 1.0x | **5.67x** | — |
-| Duration predictor speedup | 1.0x | **6.01x** | — |
-| Flow speedup | 1.0x | **7.77x** | — |
-| **Whole-pipeline GPU time** | 1.0x | **6.91x (85.5% less)** | 62% ✅ |
-| **Cost per audio-minute** | $0.000252 | **$0.000036 (85.7% less)** | 41% ✅ |
-| Held sessions, one GPU | — | 1,600 | — |
-| Continuously-speaking, one GPU | — | 128 | — |
-
-A **held session** is a live WebSocket that synthesizes for 10% of wall-clock time — a
-voice agent taking short turns. 3,200 held is ~320 speaking simultaneously. Both numbers
-are reported because conflating them is the easiest way to overstate a TTS result.
-
-### The finding that mattered most
-
-Profiling a single inference said the HiFi-GAN decoder held 54.5% of GPU time, so it was
-converted to TensorRT first — a real 5.67x. Then instrumenting the **assembled system
-under load** put **100% of the latency tail in a different stage**: the encoder, duration
-predictor and flow, left in PyTorch because the duration predictor samples `randn`
-internally and is not a pure function of its inputs.
-
-Converting that stage took TTFA p50 from ~75 ms to 21 ms. **The profile found the largest
-consumer of GPU time; it did not find the constraint.**
-
-### Measurement log
-
-| Milestone | Finding | Where |
+| | baseline (FastAPI) | measured |
 |---|---|---|
-| M1 | The *naive* async baseline beats the *competent* threadpool one under load — uncontrolled GPU concurrency is worse than a queue | [docs/BASELINE.md](docs/BASELINE.md) |
-| M2 | Decoder is launch-bound, not compute-bound: 96x the work costs 1.10x the time | [docs/PROFILE.md](docs/PROFILE.md) |
-| M3 | Receptive field (13 frames) exceeds the 200 ms chunk; overlap alone removes seams, and the crossfade was actively harmful | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| M4 | TensorRT conversion is lossless (0.116 dB LSD); all FP16 error is precision (1.52 dB) | [docs/TENSORRT.md](docs/TENSORRT.md) |
-| M9 | 100% of the latency tail was the one stage still in PyTorch | [docs/LOADTEST.md](docs/LOADTEST.md) |
-| M10 | The stochastic duration predictor *is* exportable — hoist its `randn` into a graph input | [export/export_frontend_onnx.py](export/export_frontend_onnx.py) |
-| M11 | Same software, A40 → RTX 6000 Ada: 4 → 128 concurrent sessions. Serving ceilings do not generalize across cards | [docs/RESULTS.md](docs/RESULTS.md) |
-| M12 | 3,200 held sessions across 2 GPUs, p99 113.8 ms, zero underruns | [docs/RESULTS.md](docs/RESULTS.md) |
+| held sessions @ 10% duty | n/a | 3,200 (2 GPUs) |
+| TTFA p99 | no streaming | 113.8 ms |
+| TTFA p50 | no streaming | 26.3 ms |
+| underruns / rejections | n/a | 0 / 0 |
+| aggregate real-time factor | 85-96x | 350x |
+| whole-pipeline GPU time | 1.0x | 6.91x (85% less) |
+| cost per audio-minute | $0.000252 | $0.000036 |
+| held sessions, 1 GPU | n/a | 1,600 |
+| continuously speaking, 1 GPU | n/a | 128 |
 
----|---|---|---|
-| TTFA p50 | n/a — no streaming | **26 ms** | < 80 ms ✅ |
-| TTFA p99 | n/a — no streaming | **148 ms** at the knee, **29 ms** unloaded | < 150 ms ✅ |
-| **Held sessions @ 10% duty, one GPU** | — | **1,600** | — |
-| Concurrent sessions (continuously speaking) | — | **128** | — |
-| Underruns | n/a | **0** at every level | 0 ✅ |
-| Aggregate real-time factor | 85–96x | **205x** (saturation) | — |
-| Decoder speedup (TensorRT FP16) | 1.0x | **5.67x** | — |
-| Duration predictor speedup | 1.0x | **6.09x** | — |
-| Flow speedup | 1.0x | **6.87x** | — |
-
-**3,200 sessions needs 2 GPUs: 2 × 1,600 = 3,200.** The per-GPU figure is measured;
-the multi-GPU routing is built (least-in-flight across N Triton endpoints, one per card)
-and awaits a two-GPU run.
-
-Per-GPU capacity across this project: **4 → 128 → 1,067 → 1,600** — hardware, then
-batching the bottleneck stage, then converting the front half to TensorRT.
-
-**The p99 latency target is met. The concurrency target is missed by more than two orders
-of magnitude,** and [docs/LOADTEST.md](docs/LOADTEST.md) says exactly why: 100% of the
-latency tail is `vits_frontend` — the stochastic duration predictor and flow that could
-not be exported to TensorRT, because the duration predictor samples `randn` internally
-and so is not a pure function of its inputs. The decoder that got the 4x speedup never
-appears in the tail at all.
-
-That is the project's most useful result. The optimization went precisely where the
-profile said the GPU time was, and the actual constraint was somewhere else — visible
-only after instrumenting the assembled system and loading it until it broke.
-
-The second most useful: at the knee the GPU sits at **~2% of its throughput ceiling**.
-This system is latency-bound, not throughput-bound — so a bigger card, the first thing
-most people reach for, would not help.
-
-### Measurement log
-
-| Milestone | Finding | Where |
-|---|---|---|
-| M1 | The *naive* async baseline beats the *competent* threadpool one under load — uncontrolled GPU concurrency is worse than a queue | [docs/BASELINE.md](docs/BASELINE.md) |
-| M2 | Decoder is launch-bound, not compute-bound: 96x the work costs 1.10x the time | [docs/PROFILE.md](docs/PROFILE.md) |
-| M2 | Batching is free only to B≈4–8, which sets the batching window | [docs/PROFILE.md](docs/PROFILE.md) |
-| M3 | Receptive field (13 frames) exceeds the 200 ms chunk; overlap alone removes seams | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| M3 | The crossfade was unnecessary, and the equal-power curve was actively harmful | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| M4 | TensorRT conversion is lossless (0.116 dB LSD); all FP16 error is precision (1.52 dB) | [docs/TENSORRT.md](docs/TENSORRT.md) |
-| M9 | TTFA is length-independent — 9.5x the words costs 1.4x the latency | [docs/LOADTEST.md](docs/LOADTEST.md) |
-| M9 | 100% of the latency tail is the one stage that stayed in PyTorch | [docs/LOADTEST.md](docs/LOADTEST.md) |
-| M10 | The stochastic duration predictor *is* exportable — hoist its `randn` into a graph input | [export/export_frontend_onnx.py](export/export_frontend_onnx.py) |
-| M11 | Same software, A40 → RTX 6000 Ada: 4 → 128 concurrent sessions. Capacity ceilings do not generalize across cards | [docs/LOADTEST.md](docs/LOADTEST.md) |
-
----
+A "held session" is a WebSocket that synthesizes 10% of the time, like a voice agent
+taking turns. 3,200 held is ~320 speaking at once. Both numbers are here because
+conflating them is how you accidentally overstate a TTS benchmark by 10x.
 
 ## Architecture
 
 ```
-                 WebSocket                     gRPC                 as built
-   client ──────────────────► Go gateway ──────────────► Triton
-                             ┌──────────────┐        ┌───────────────────────────────┐
-                             │ session state│        │ tts_frontend  (Python, CPU)   │ normalize → tokens
-                             │ admission ctl│        │ vits_frontend (Python, GPU)   │ encoder+duration+flow → latents
-                             │ dual routing │        │ tts_stream    (C++, DECOUPLED)│ chunked decode → PCM chunks
-                             │ OTel + Prom  │        │   └─ loads the TensorRT FP16  │
-                             └──────────────┘        │      decoder engine directly  │
-                                                     └───────────────────────────────┘
-                             ◄───────── audio chunks stream back ─────────
+client --WebSocket--> Go gateway --gRPC--> Triton
+                      sessions             tts_frontend   (python, CPU)  text -> tokens
+                      admission            vits_frontend  (python, GPU)  tokens -> latents
+                      routing              tts_stream     (C++, DECOUPLED)
+                      OTel + Prom            loads the TRT decoder engine,
+                                             chunks, pushes each chunk out
+                      <---- audio chunks stream back ----
 ```
 
-The decoder engine is loaded **inside** the C++ backend rather than served as its own
-Triton model, so the chunk loop, engine invocation, trimming and PCM conversion all live
-in one place with no cross-model hop per chunk.
+Decoupled mode is the whole trick. A normal Triton model is one request, one response.
+Decoupled lets one request emit many responses over time, so chunks go out as they're
+decoded instead of after the full utterance. TTFA stops depending on how long the
+sentence is (9.5x the words costs 1.4x the latency, measured).
 
-**Two backends, on purpose.** Python owns the text frontend — normalization
-(`"Dr."` → `"doctor"`, `"$45"` → `"forty-five dollars"`), G2P, tokenization. It is
-messy rule-heavy string logic that changes constantly and runs exactly once per
-utterance, so it is not on the hot path. C++ owns the streaming loop — per-chunk engine
-invocation, overlap-add crossfade, float32 → int16 PCM, pushing into the decoupled
-response queue. That code runs many times per second per session across every session.
-The rule: **Python where the code changes, C++ where the latency lives.**
+The C++ backend loads the TensorRT engine directly rather than calling another Triton
+model, so there's no cross-model hop per chunk.
 
-**Chunking is the whole latency trick.** Synthesizing the full utterance and then
-streaming the file does not improve time-to-first-audio at all. Instead: run the text
-encoder, duration predictor, and flow once up front (cheap), then slice the *decoder* —
-the HiFi-GAN generator, where nearly all GPU time lives — and ship the first ~200 ms of
-audio immediately while later slices decode behind it. TTFA stops depending on utterance
-length.
+## What I learned building it
 
-The decoder is convolutional, so naively chopping latents produces audible clicks at
-chunk boundaries — each slice is missing its neighbours' receptive field. Fix: decode with
-overlap padding on both sides and trim back to the valid centre.
+Most of these were surprises. Details in `docs/`.
 
-There is **no crossfade**. The original design treated one as essential; M3 measured the
-decoder's receptive field at 13 frames, showed that overlap at or above it already
-matches a single-pass decode (seam step-ratio 10.25 vs 10.26), and showed the intended
-equal-power curve actively *hurt* — it is the right curve for uncorrelated signals, and
-these two decodes are near-identical. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- Profiling one inference said the decoder was 54.5% of GPU time, so I converted that
+  first. Then loading the assembled system put 100% of the latency tail in a *different*
+  stage. The profile found the biggest consumer, not the constraint.
+- The decoder is launch-bound, not compute-bound: 96x the work costs 1.10x the time.
+  That changes which optimizations matter (fusion and batching, not FP16 bandwidth).
+- The crossfade I designed for chunk boundaries was unnecessary and also harmful.
+  I'd picked equal-power, which is right for uncorrelated signals. These are correlated.
+  Overlap alone already matches a single-pass decode.
+- KV-cache reuse doesn't apply here. VITS is non-autoregressive and its text encoder is
+  bidirectional (appending text moves the existing prefix 57%). Built clause-level
+  latent caching instead.
+- The naive async baseline beat the "competent" threadpool one under load. Uncontrolled
+  concurrency in front of a GPU is worse than a queue.
+- Same code, A40 -> RTX 6000 Ada: 4 -> 128 concurrent sessions. Capacity numbers don't
+  transfer between cards.
+- I also tried an A100, since that's the obvious "serious" card. It was 16% worse per
+  audio-minute at double the price. The bandwidth advantage does nothing for a
+  launch-bound workload.
 
-**Why the flow runs whole and not chunked:** the residual coupling layers have their own
-receptive field and are numerically touchy in FP16. Running them once over the full
-utterance in FP32 sidesteps both problems, and they are cheap next to the decoder.
+## Running it
 
-**Go for the control plane** because 3,200 streaming connections means 3,200 things
-concurrently blocked on I/O. Goroutines make that nearly free, there is no GIL competing
-for the CPU-side work, and it ships as one static binary with well-behaved tail latency.
-
----
-
-## Repository layout
-
-```
-baseline/       deliberate naive FastAPI server — the number to beat
-export/         PyTorch → ONNX → TensorRT engines, plus FP16 quality validation
-model_repo/     Triton model repository (configs + artifacts)
-backends/       C++ streaming backend source
-gateway/        Go control plane: WebSocket ↔ gRPC, sessions, admission control
-loadgen/        Go load generator — realistic sentence distributions, TTFA histograms
-observability/  Prometheus, Grafana dashboards, OTel collector config
-docker/         Triton image + compose stack
-scripts/        GPU box provisioning and sync
-docs/           architecture decisions, measurement methodology
-```
-
-## Getting started
-
-This does not run on a laptop. It needs an NVIDIA GPU, and the toolchain
-(TensorRT, Triton custom backends) is Linux-only.
+Needs an NVIDIA GPU and Linux. Start the pod from
+`nvcr.io/nvidia/tritonserver:24.08-py3` (see [docs/GPU_BOX.md](docs/GPU_BOX.md)).
 
 ```bash
-# on the box (started from nvcr.io/nvidia/tritonserver:24.08-py3 — see docs/GPU_BOX.md)
-bash scripts/provision.sh          # deps, venv, Go, Triton backend SDK, observability
-python export/fetch_model.py       # VITS checkpoint
-python export/export_onnx.py       # encoder + decoder → ONNX
-python export/build_trt.py         # FP16 + FP32 engines, benchmarked
-bash scripts/build_backend.sh      # compile the C++ decoupled backend
-bash scripts/services.sh start     # prometheus, grafana, jaeger, otel
-bash scripts/services.sh start triton
-cd gateway && go build -o /workspace/bin/gateway ./cmd/gateway && /workspace/bin/gateway
+bash scripts/provision.sh            # deps, venv, Go, Triton SDK, observability
+python export/fetch_model.py
+python export/export_onnx.py
+python export/export_frontend_onnx.py
+python export/build_trt.py           # decoder + encoder engines
+python export/build_trt_frontend.py  # duration predictor + flow engines
+bash scripts/build_backend.sh        # compile the C++ backend
+bash scripts/gen_triton_proto.sh
+bash scripts/services.sh start
+bash scripts/services.sh start triton    # one Triton per GPU
+cd gateway && go build -o /workspace/bin/gateway ./cmd/gateway
 ```
 
-Then drive it:
+Then:
 
 ```bash
-python streaming/client.py --bench 30              # TTFA percentiles
-/workspace/bin/loadgen --levels 1,2,4,8,16         # the ramp
+python streaming/client.py --bench 30
+/workspace/bin/loadgen --levels 1600,3200 --duty 0.1 --duration 240s
 ```
 
-RunPod pods are containers and cannot run Docker, so `docker/` is for VM deploys only —
-see [docker/README.md](docker/README.md). Run the baseline (`scripts/run_baseline.sh`)
-before claiming any speedup.
+RunPod pods are containers and can't run Docker, so `docker/` is for VM deploys only.
 
-See [BUILD_PLAN.md](BUILD_PLAN.md) for the milestones and [docs/](docs/) for what each
-one measured.
+## Layout
+
+```
+baseline/       naive FastAPI server, the number to beat
+export/         ONNX export, TensorRT engine builds, quality checks
+model_repo/     Triton models (2 python, 1 C++ decoupled)
+backends/       C++ streaming backend
+streaming/      chunked decode, TRT frontend, text normalization, client
+gateway/        Go control plane
+loadgen/        Go load generator
+observability/  Prometheus, Grafana, OTel config
+docs/           what each milestone measured (NOTES.md is the condensed version)
+results/        raw measurement JSON
+```
+
+## Known gaps
+
+- Cross-request batching is off in the TensorRT front half. The batched alignment is
+  wrong for B>1 since each item predicts its own frame count. Costs throughput at
+  duty=1.0, costs nothing at duty=0.1. Top of the list to fix.
+- The A100 comparison is incomplete. Its session knee is bracketed between 400 and
+  1,200, and I lost the raw artifacts when the pod ended. Marked as indicative in the docs.
+- Decoder still decodes 13 frames of left context per chunk and throws it away (34%
+  waste at steady state). Streaming convolutions with cached state would remove it.
+- Everything is `facebook/mms-tts-eng`, 36M params, 16kHz. A bigger model moves all of this.

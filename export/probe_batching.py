@@ -1,27 +1,4 @@
-"""
-The decisive experiment for the chunked-streaming design.
-
-M2 established that the HiFi-GAN decoder is launch-bound below ~192 latent frames: 96x
-more work costs 1.1x the time. Two consequences pull in opposite directions.
-
-  Against chunking: decoding a 192 ms chunk costs 4.6 ms while decoding a whole 5 s
-  utterance costs 11.5 ms. Per audio-second, chunking is ~8x more expensive.
-
-  For chunking: if the GPU is idle between kernel launches, then batching many sessions'
-  chunks into one call should cost barely more than a single chunk — which is exactly
-  the regime where Triton's dynamic batching pays for its queue delay.
-
-So the question that decides the architecture is: **at the chunk sizes we would actually
-serve, how does cost scale with batch size?** If per-stream cost collapses with batch,
-chunked streaming plus dynamic batching wins and the design stands. If it scales
-linearly, chunking is a net loss and the design needs rethinking.
-
-Also measures CPU wall time against GPU stream time. A large gap means the Python
-dispatch path — not the GPU — is the constraint, which is the quantitative case for
-moving the per-chunk loop into C++.
-
-  python export/probe_batching.py
-"""
+"""The decisive experiment for the chunked-streaming design."""
 
 from __future__ import annotations
 
@@ -144,8 +121,6 @@ def main() -> None:
 
     # ------------------------------------------------------- concurrency estimate
     # How many live streams can one GPU sustain? Each stream needs one chunk of audio
-    # decoded per chunk-duration of wall time. With batching, cost per batched call is
-    # what matters, not cost per stream.
     print("\nSustainable concurrent streams (decoder only, ignoring frontend)\n")
     est = {}
     T = chunk_specs["200ms+ovl16"]

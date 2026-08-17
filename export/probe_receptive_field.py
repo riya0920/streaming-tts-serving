@@ -1,23 +1,4 @@
-"""
-Measure the HiFi-GAN decoder's effective receptive field, in latent frames.
-
-This sets `overlap_frames` in the chunked streaming design, and getting it wrong is
-expensive in both directions:
-
-  too small -> chunk edges are decoded without the context they need, and the seams
-               click audibly
-  too large -> every chunk decodes context it throws away. At chunk=12 frames, an
-               overlap of 16 means decoding 44 frames to keep 12: 73% of the work
-               wasted, and the batching probe showed per-stream batching efficiency
-               falling from 8.3x to 2.6x as a result.
-
-Method: decode latents, perturb a single frame in the middle, decode again, and measure
-how far the output actually changed. That is the *effective* receptive field — the
-theoretical one (from dilations and kernel sizes) is an upper bound that ignores how
-quickly influence decays to inaudibility.
-
-  python export/probe_receptive_field.py
-"""
+"""Measure the HiFi-GAN decoder's effective receptive field, in latent frames."""
 
 from __future__ import annotations
 

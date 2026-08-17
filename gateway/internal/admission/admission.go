@@ -2,15 +2,9 @@
 //
 // The argument for this is measured, not theoretical. M1 loaded the naive baseline until
 // it fell over: at concurrency 8 throughput collapsed 3.5x, and at 128 not one request
-// completed inside a 20-second window. Admitting everything did not serve more users, it
-// served none. Meanwhile the same server with requests serialized at the front door held
-// throughput flat all the way up.
 //
 // So: past a threshold, reject immediately. Better to fail one user in 2 ms — who can
 // retry, or be routed elsewhere — than to admit them and drag three thousand others'
-// p99 past the point where audio underruns mid-sentence. A rejected session is a bad
-// experience; a degraded stream that stutters is a worse one, and it is inflicted on
-// everybody at once.
 package admission
 
 import (

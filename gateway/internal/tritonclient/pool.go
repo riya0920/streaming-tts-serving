@@ -13,21 +13,12 @@ import (
 //
 // Why this exists: a single RTX 6000 Ada holds 1,067 sessions at 10% duty with p99
 // time-to-first-audio at 149 ms, and breaks when aggregate real-time factor reaches ~205
-// — a genuine hardware ceiling, not a software one. Serving more than that is a
-// horizontal problem, and always was. Three endpoints put 3,200 sessions inside the
-// measured per-GPU envelope with headroom.
 //
 // Routing is least-in-flight rather than round-robin. Round-robin is only fair when
 // requests cost the same, and TTS requests do not: a 57-word utterance occupies a
-// backend far longer than a 6-word one, so round-robin steadily piles long work onto
-// whichever endpoint happened to receive it. Least-in-flight self-corrects because a
-// busy endpoint stops being chosen.
 //
 // A request is pinned to one endpoint for all three hops. Nothing forces that — the
 // endpoints are identical replicas and each hop is stateless — but splitting a request
-// across endpoints would ship latents (192 x frames floats) between two machines for no
-// benefit, and would make a single slow endpoint contaminate every request instead of a
-// share of them.
 type Pool struct {
 	entries []*poolEntry
 	mu      sync.RWMutex

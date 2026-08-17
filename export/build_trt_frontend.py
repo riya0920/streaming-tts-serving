@@ -1,19 +1,4 @@
-"""
-M10 — build TensorRT engines for the duration predictor and flow, and prove they help.
-
-These are the two graphs `export_frontend_onnx.py` produced. Together they are the stage
-M9 measured as 100% of the latency tail, so this is the only remaining lever that attacks
-per-request latency rather than throughput — and the load test showed the knee arrives at
-~2% GPU utilization, meaning throughput was never the constraint.
-
-Validation here is stricter than for the decoder, for one specific reason: the duration
-predictor's noise is now a graph input. An engine that ignores that input, or that
-collapses it to a constant during optimization, would still pass a parity check against a
-single fixed sample — and every utterance served would come out with identical rhythm.
-So the noise is explicitly re-tested through the built engine, not just the ONNX.
-
-  python export/build_trt_frontend.py
-"""
+"""M10 — build TensorRT engines for the duration predictor and flow, and prove they help."""
 
 from __future__ import annotations
 
