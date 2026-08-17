@@ -3,55 +3,55 @@
   "engines": {
     "duration_fp32": {
       "file": "vits_duration_fp32.plan",
-      "build_seconds": 18.6,
-      "size_mb": 9.15,
+      "build_seconds": 19.5,
+      "size_mb": 9.11,
       "fp16": false
     },
     "duration_fp16": {
       "file": "vits_duration_fp16.plan",
-      "build_seconds": 50.2,
-      "size_mb": 7.14,
+      "build_seconds": 50.0,
+      "size_mb": 6.96,
       "fp16": true
     },
     "flow_fp32": {
       "file": "vits_flow_fp32.plan",
-      "build_seconds": 22.4,
-      "size_mb": 30.24,
+      "build_seconds": 22.5,
+      "size_mb": 30.25,
       "fp16": false
     },
     "flow_fp16": {
       "file": "vits_flow_fp16.plan",
-      "build_seconds": 58.1,
-      "size_mb": 18.26,
+      "build_seconds": 59.7,
+      "size_mb": 18.24,
       "fp16": true
     }
   },
   "bench": {
     "duration": {
-      "torch_ms": 11.425,
-      "trt_fp16_ms": 1.876,
-      "speedup": 6.09,
+      "torch_ms": 11.906,
+      "trt_fp16_ms": 1.982,
+      "speedup": 6.01,
       "noise_live": true,
-      "noise_spread": 0.628738,
+      "noise_spread": 0.584964,
       "shape_match": true
     },
     "flow_T200": {
-      "torch_ms": 5.691,
-      "trt_fp16_ms": 0.855,
-      "speedup": 6.66,
-      "rel_rms": 0.00031153403774187595
+      "torch_ms": 6.117,
+      "trt_fp16_ms": 0.86,
+      "speedup": 7.11,
+      "rel_rms": 0.00030730092798583384
     },
     "flow_T400": {
-      "torch_ms": 5.784,
-      "trt_fp16_ms": 0.871,
-      "speedup": 6.64,
-      "rel_rms": 0.00031216567025334636
+      "torch_ms": 6.835,
+      "trt_fp16_ms": 0.88,
+      "speedup": 7.77,
+      "rel_rms": 0.00030518155889756567
     },
     "flow_T800": {
-      "torch_ms": 6.15,
-      "trt_fp16_ms": 0.896,
-      "speedup": 6.87,
-      "rel_rms": 0.0003067545265150646
+      "torch_ms": 6.187,
+      "trt_fp16_ms": 0.902,
+      "speedup": 6.86,
+      "rel_rms": 0.00030977163147486537
     }
   }
 }

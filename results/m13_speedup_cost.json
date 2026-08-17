@@ -1,0 +1,58 @@
+{
+  "price_per_gpu_hour": 0.9,
+  "per_utterance": [
+    {
+      "text": "Sure, I can help with that.",
+      "audio_seconds": 1.82,
+      "torch_ms": 66.16,
+      "trt_ms": 10.23,
+      "speedup": 6.46,
+      "reduction_pct": 84.5
+    },
+    {
+      "text": "Your flight leaves at four fifteen f",
+      "audio_seconds": 5.94,
+      "torch_ms": 101.06,
+      "trt_ms": 14.26,
+      "speedup": 7.09,
+      "reduction_pct": 85.9
+    },
+    {
+      "text": "The main difference is that the firs",
+      "audio_seconds": 9.79,
+      "torch_ms": 133.31,
+      "trt_ms": 19.27,
+      "speedup": 6.92,
+      "reduction_pct": 85.5
+    },
+    {
+      "text": "I have added milk, eggs, and coffee ",
+      "audio_seconds": 6.56,
+      "torch_ms": 104.04,
+      "trt_ms": 14.76,
+      "speedup": 7.05,
+      "reduction_pct": 85.8
+    }
+  ],
+  "weighted": {
+    "audio_seconds": 24.11,
+    "torch_ms": 404.57,
+    "trt_ms": 58.52,
+    "speedup": 6.91,
+    "gpu_time_reduction_pct": 85.5
+  },
+  "cost": {
+    "pytorch": {
+      "gpu_seconds_per_audio_minute": 1.007,
+      "usd_per_audio_minute": 0.000252,
+      "audio_minutes_per_gpu_hour": 3575.6
+    },
+    "tensorrt": {
+      "gpu_seconds_per_audio_minute": 0.146,
+      "usd_per_audio_minute": 3.6e-05,
+      "audio_minutes_per_gpu_hour": 24719.8
+    },
+    "reduction_pct": 85.7,
+    "model": "GPU occupancy only; excludes CPU, network and idle headroom"
+  }
+}

@@ -14,12 +14,54 @@ of that fight.
 
 ## Status
 
-**Built and measured end to end.** Every number was produced on real hardware, with the
-raw artifact committed under `results/`. Headline figures are on an **RTX 6000 Ada**;
-the earlier design and profiling work was done on an **A40** and is labelled as such.
+**Complete and measured on 2× NVIDIA RTX 6000 Ada.** Every number below was produced on
+real hardware with the raw artifact committed under `results/`. Full detail and caveats:
+[docs/RESULTS.md](docs/RESULTS.md).
 
-| Metric | Baseline (FastAPI) | Measured (RTX 6000 Ada) | Target |
+| Metric | Baseline (FastAPI) | Measured | Target |
 |---|---|---|---|
+| **Held sessions @ 10% duty** | — | **3,200** (2 GPUs) | 3,200 ✅ |
+| **TTFA p99 at 3,200** | n/a — no streaming | **113.8 ms** | < 150 ms ✅ |
+| TTFA p50 at 3,200 | n/a | **26.3 ms** | < 80 ms ✅ |
+| Underruns / rejections | n/a | **0 / 0** | 0 ✅ |
+| Aggregate real-time factor | 85–96x | **350x** | — |
+| Decoder speedup (TensorRT FP16) | 1.0x | **5.67x** | — |
+| Duration predictor speedup | 1.0x | **6.01x** | — |
+| Flow speedup | 1.0x | **7.77x** | — |
+| **Whole-pipeline GPU time** | 1.0x | **6.91x (85.5% less)** | 62% ✅ |
+| **Cost per audio-minute** | $0.000252 | **$0.000036 (85.7% less)** | 41% ✅ |
+| Held sessions, one GPU | — | 1,600 | — |
+| Continuously-speaking, one GPU | — | 128 | — |
+
+A **held session** is a live WebSocket that synthesizes for 10% of wall-clock time — a
+voice agent taking short turns. 3,200 held is ~320 speaking simultaneously. Both numbers
+are reported because conflating them is the easiest way to overstate a TTS result.
+
+### The finding that mattered most
+
+Profiling a single inference said the HiFi-GAN decoder held 54.5% of GPU time, so it was
+converted to TensorRT first — a real 5.67x. Then instrumenting the **assembled system
+under load** put **100% of the latency tail in a different stage**: the encoder, duration
+predictor and flow, left in PyTorch because the duration predictor samples `randn`
+internally and is not a pure function of its inputs.
+
+Converting that stage took TTFA p50 from ~75 ms to 21 ms. **The profile found the largest
+consumer of GPU time; it did not find the constraint.**
+
+### Measurement log
+
+| Milestone | Finding | Where |
+|---|---|---|
+| M1 | The *naive* async baseline beats the *competent* threadpool one under load — uncontrolled GPU concurrency is worse than a queue | [docs/BASELINE.md](docs/BASELINE.md) |
+| M2 | Decoder is launch-bound, not compute-bound: 96x the work costs 1.10x the time | [docs/PROFILE.md](docs/PROFILE.md) |
+| M3 | Receptive field (13 frames) exceeds the 200 ms chunk; overlap alone removes seams, and the crossfade was actively harmful | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| M4 | TensorRT conversion is lossless (0.116 dB LSD); all FP16 error is precision (1.52 dB) | [docs/TENSORRT.md](docs/TENSORRT.md) |
+| M9 | 100% of the latency tail was the one stage still in PyTorch | [docs/LOADTEST.md](docs/LOADTEST.md) |
+| M10 | The stochastic duration predictor *is* exportable — hoist its `randn` into a graph input | [export/export_frontend_onnx.py](export/export_frontend_onnx.py) |
+| M11 | Same software, A40 → RTX 6000 Ada: 4 → 128 concurrent sessions. Serving ceilings do not generalize across cards | [docs/RESULTS.md](docs/RESULTS.md) |
+| M12 | 3,200 held sessions across 2 GPUs, p99 113.8 ms, zero underruns | [docs/RESULTS.md](docs/RESULTS.md) |
+
+---|---|---|---|
 | TTFA p50 | n/a — no streaming | **26 ms** | < 80 ms ✅ |
 | TTFA p99 | n/a — no streaming | **148 ms** at the knee, **29 ms** unloaded | < 150 ms ✅ |
 | **Held sessions @ 10% duty, one GPU** | — | **1,600** | — |
