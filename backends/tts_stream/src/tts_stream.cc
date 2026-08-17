@@ -83,6 +83,7 @@ class ModelState : public BackendModel {
   double ChunkGrowth() const { return chunk_growth_; }
   int64_t OverlapFrames() const { return overlap_frames_; }
   int64_t Hop() const { return hop_; }
+  int64_t MinWindowFrames() const { return min_window_frames_; }
   int64_t Channels() const { return channels_; }
   const std::string& InputTensor() const { return input_tensor_; }
   const std::string& OutputTensor() const { return output_tensor_; }
@@ -104,6 +105,9 @@ class ModelState : public BackendModel {
   double chunk_growth_{2.0};
   int64_t overlap_frames_{13};
   int64_t hop_{256};
+  // Must match the engine's optimization-profile minimum; below it TensorRT
+  // rejects the shape rather than padding for us.
+  int64_t min_window_frames_{14};
   int64_t channels_{192};
 
   std::unique_ptr<nvinfer1::IRuntime> runtime_;
@@ -156,6 +160,7 @@ ModelState::ReadConfig()
   get_i64("max_chunk_frames", &max_chunk_frames_);
   get_i64("overlap_frames", &overlap_frames_);
   get_i64("hop", &hop_);
+  get_i64("min_window_frames", &min_window_frames_);
   get_i64("channels", &channels_);
   get_dbl("chunk_growth", &chunk_growth_);
 
@@ -272,8 +277,9 @@ ModelInstanceState::Init()
   TTS_CUDA_CHECK(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking),
                        "cudaStreamCreate");
 
-  max_window_frames_ =
-      model_state_->MaxChunkFrames() + 2 * model_state_->OverlapFrames();
+  max_window_frames_ = std::max(
+      model_state_->MaxChunkFrames() + 2 * model_state_->OverlapFrames(),
+      model_state_->MinWindowFrames());
   const size_t in_elems =
       static_cast<size_t>(model_state_->Channels()) * max_window_frames_;
   const size_t out_elems =
@@ -294,7 +300,8 @@ ModelInstanceState::Init()
   int64_t size = model_state_->FirstChunkFrames();
   std::vector<int64_t> shapes;
   while (true) {
-    shapes.push_back(size + 2 * model_state_->OverlapFrames());
+    shapes.push_back(std::max(size + 2 * model_state_->OverlapFrames(),
+                              model_state_->MinWindowFrames()));
     if (size >= model_state_->MaxChunkFrames()) break;
     size = std::min<int64_t>(model_state_->MaxChunkFrames(),
                              std::max<int64_t>(size + 1,
@@ -332,16 +339,34 @@ ModelInstanceState::DecodeWindow(const float* latents_host, int64_t total_frames
 {
   const int64_t C = model_state_->Channels();
   const int64_t hop = model_state_->Hop();
-  const int64_t window = hi - lo;
+  const int64_t real = hi - lo;
+
+  // The TensorRT engine's optimization profile has a minimum frame count, and a short
+  // utterance — or a one-frame remainder near the end of one — can produce a window
+  // below it. TensorRT rejects that outright ("does not satisfy any optimization
+  // profiles"), failing the whole request, which is how a two-word reply took down a
+  // stream that worked fine for everything longer.
+  //
+  // Zero-pad up to the minimum. The padding sits past the audio we keep, so it only
+  // ever contributes to context that gets trimmed away.
+  const int64_t min_frames = model_state_->MinWindowFrames();
+  const int64_t window = std::max(real, min_frames);
 
   // Latents arrive as [1, C, T] contiguous, so a frame slice is strided: each channel
-  // is a separate contiguous run of T floats. Copy channel by channel.
+  // is a separate contiguous run of T floats. Copy channel by channel into a buffer
+  // whose per-channel stride is the padded window.
   for (int64_t c = 0; c < C; ++c) {
     TTS_CUDA_CHECK(
         cudaMemcpyAsync(d_in_ + c * window,
                         latents_host + c * total_frames + lo,
-                        window * sizeof(float), cudaMemcpyHostToDevice, stream_),
+                        real * sizeof(float), cudaMemcpyHostToDevice, stream_),
         "H2D latents");
+    if (window > real) {
+      TTS_CUDA_CHECK(
+          cudaMemsetAsync(d_in_ + c * window + real, 0,
+                          (window - real) * sizeof(float), stream_),
+          "zero pad latents");
+    }
   }
 
   nvinfer1::Dims3 dims(1, static_cast<int32_t>(C), static_cast<int32_t>(window));

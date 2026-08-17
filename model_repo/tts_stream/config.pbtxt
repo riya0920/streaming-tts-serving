@@ -98,3 +98,9 @@ parameters {
   key: "channels"
   value: { string_value: "192" }
 }
+# Matches the decoder engine's optimization-profile minimum (export/build_trt.py builds
+# it at [1,192,14]). Windows shorter than this are zero-padded rather than rejected.
+parameters {
+  key: "min_window_frames"
+  value: { string_value: "14" }
+}

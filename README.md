@@ -19,9 +19,9 @@ hardware, with the raw artifact committed under `results/`.
 
 | Metric | Baseline (FastAPI) | Measured | Target |
 |---|---|---|---|
-| TTFA p50 | n/a — no streaming | **102 ms** | < 80 ms |
-| TTFA p99 | n/a — no streaming | **134 ms** | < 150 ms ✅ |
-| Concurrent sessions at that p99 | — | **2** (continuously speaking) | 3,200 ❌ |
+| TTFA p50 | n/a — no streaming | **117 ms** | < 80 ms |
+| TTFA p99 | n/a — no streaming | **144 ms** | < 150 ms ✅ |
+| Concurrent sessions at that p99 | — | **4** (continuously speaking) | 3,200 ❌ |
 | Underruns | n/a | **0** at every level | 0 ✅ |
 | Aggregate real-time factor | 85–96x | **207x** | — |
 | Decoder speedup (TensorRT FP16) | 1.0x | **4.07x** | — |
@@ -37,6 +37,10 @@ appears in the tail at all.
 That is the project's most useful result. The optimization went precisely where the
 profile said the GPU time was, and the actual constraint was somewhere else — visible
 only after instrumenting the assembled system and loading it until it broke.
+
+The second most useful: at the knee the GPU sits at **~2% of its throughput ceiling**.
+This system is latency-bound, not throughput-bound — so a bigger card, the first thing
+most people reach for, would not help.
 
 ### Measurement log
 
@@ -56,17 +60,21 @@ only after instrumenting the assembled system and loading it until it broke.
 ## Architecture
 
 ```
-                 WebSocket                    gRPC (decoupled)
-   client  ────────────────►  Go gateway  ──────────────────────►  Triton
-                             ┌──────────────┐                   ┌──────────────────┐
-                             │ session state│                   │ tts_frontend  (PY)│  normalize → G2P → tokens
-                             │ admission ctl│                   │ vits_encoder  (TRT)│  text → hidden, m_p, logs_p
-                             │ dual routing │                   │ [dur + flow]  (FP32)│  → latents z
-                             │ OTel spans   │                   │ tts_stream    (C++)│  chunked decode loop
-                             └──────────────┘                   │ vits_decoder  (TRT)│  latents → waveform
-                                                                └──────────────────┘
-                             ◄──────── audio chunks stream back ────────
+                 WebSocket                     gRPC                 as built
+   client ──────────────────► Go gateway ──────────────► Triton
+                             ┌──────────────┐        ┌───────────────────────────────┐
+                             │ session state│        │ tts_frontend  (Python, CPU)   │ normalize → tokens
+                             │ admission ctl│        │ vits_frontend (Python, GPU)   │ encoder+duration+flow → latents
+                             │ dual routing │        │ tts_stream    (C++, DECOUPLED)│ chunked decode → PCM chunks
+                             │ OTel + Prom  │        │   └─ loads the TensorRT FP16  │
+                             └──────────────┘        │      decoder engine directly  │
+                                                     └───────────────────────────────┘
+                             ◄───────── audio chunks stream back ─────────
 ```
+
+The decoder engine is loaded **inside** the C++ backend rather than served as its own
+Triton model, so the chunk loop, engine invocation, trimming and PCM conversion all live
+in one place with no cross-model hop per chunk.
 
 **Two backends, on purpose.** Python owns the text frontend — normalization
 (`"Dr."` → `"doctor"`, `"$45"` → `"forty-five dollars"`), G2P, tokenization. It is
@@ -84,9 +92,14 @@ audio immediately while later slices decode behind it. TTFA stops depending on u
 length.
 
 The decoder is convolutional, so naively chopping latents produces audible clicks at
-chunk boundaries — each slice is missing its neighbors' receptive field. Fix: decode with
-overlap padding on both sides, trim to the valid center, and equal-power crossfade the
-seams. Chunk size is a measured tradeoff, not a guess (see `docs/ARCHITECTURE.md`).
+chunk boundaries — each slice is missing its neighbours' receptive field. Fix: decode with
+overlap padding on both sides and trim back to the valid centre.
+
+There is **no crossfade**. The original design treated one as essential; M3 measured the
+decoder's receptive field at 13 frames, showed that overlap at or above it already
+matches a single-pass decode (seam step-ratio 10.25 vs 10.26), and showed the intended
+equal-power curve actively *hurt* — it is the right curve for uncorrelated signals, and
+these two decodes are near-identical. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 **Why the flow runs whole and not chunked:** the residual coupling layers have their own
 receptive field and are numerically touchy in FP16. Running them once over the full
@@ -118,10 +131,28 @@ docs/           architecture decisions, measurement methodology
 This does not run on a laptop. It needs an NVIDIA GPU, and the toolchain
 (TensorRT, Triton custom backends) is Linux-only.
 
-1. Provision a GPU box — see [docs/GPU_BOX.md](docs/GPU_BOX.md).
-2. `scripts/provision.sh` on the box installs Docker, the NVIDIA container toolkit, Go,
-   and pulls the Triton image.
-3. `docker/` brings up Triton + Prometheus + Grafana + Jaeger.
-4. Run the baseline first (`baseline/`) — without it, "62% faster" means nothing.
+```bash
+# on the box (started from nvcr.io/nvidia/tritonserver:24.08-py3 — see docs/GPU_BOX.md)
+bash scripts/provision.sh          # deps, venv, Go, Triton backend SDK, observability
+python export/fetch_model.py       # VITS checkpoint
+python export/export_onnx.py       # encoder + decoder → ONNX
+python export/build_trt.py         # FP16 + FP32 engines, benchmarked
+bash scripts/build_backend.sh      # compile the C++ decoupled backend
+bash scripts/services.sh start     # prometheus, grafana, jaeger, otel
+bash scripts/services.sh start triton
+cd gateway && go build -o /workspace/bin/gateway ./cmd/gateway && /workspace/bin/gateway
+```
 
-See [BUILD_PLAN.md](BUILD_PLAN.md) for the sequenced milestones.
+Then drive it:
+
+```bash
+python streaming/client.py --bench 30              # TTFA percentiles
+/workspace/bin/loadgen --levels 1,2,4,8,16         # the ramp
+```
+
+RunPod pods are containers and cannot run Docker, so `docker/` is for VM deploys only —
+see [docker/README.md](docker/README.md). Run the baseline (`scripts/run_baseline.sh`)
+before claiming any speedup.
+
+See [BUILD_PLAN.md](BUILD_PLAN.md) for the milestones and [docs/](docs/) for what each
+one measured.

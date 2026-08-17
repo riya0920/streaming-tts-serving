@@ -1,23 +1,38 @@
 name: "vits_frontend"
 backend: "python"
 
-# Ragged token sequences again, and this stage is where TTFA actually lives (114 ms of
-# a 121 ms end-to-end TTFA per M2), so padding every request to the longest in a batch
-# would directly inflate the number this project exists to minimize.
+# Batching ON.
 #
-# Concurrency comes from instances on the GPU instead.
-max_batch_size: 0
+# The first version disabled it because token sequences are ragged. That was the single
+# largest mistake in the serving config: M9 showed this stage is 100% of the latency tail
+# (p99 1000ms while every other stage stays under 20ms), and M2 showed the model is
+# launch-bound, which is exactly the regime where batching costs almost nothing. Eight
+# instances each doing a batch-1 forward were contending for one GPU to no benefit.
+#
+# Raggedness is handled rather than avoided: the gateway buckets token lengths to
+# multiples of 16 so requests batch together, attention_mask marks the padding, and
+# NUM_FRAMES carries each item's true latent length back out.
+#
+# max_queue_delay is 2ms: M2 measured free batching ending around B=4-8, so the window
+# only needs to be long enough to collect a handful of requests. A longer window would
+# buy negligible throughput and spend real latency.
+max_batch_size: 16
+
+dynamic_batching {
+  max_queue_delay_microseconds: 2000
+  preferred_batch_size: [ 4, 8 ]
+}
 
 input [
   {
     name: "INPUT_IDS"
     data_type: TYPE_INT64
-    dims: [ 1, -1 ]
+    dims: [ -1 ]
   },
   {
     name: "ATTENTION_MASK"
     data_type: TYPE_INT64
-    dims: [ 1, -1 ]
+    dims: [ -1 ]
     optional: true
   }
 ]
@@ -26,7 +41,7 @@ output [
   {
     name: "LATENTS"
     data_type: TYPE_FP32
-    dims: [ 1, 192, -1 ]
+    dims: [ 192, -1 ]
   },
   {
     name: "NUM_FRAMES"
@@ -38,12 +53,23 @@ output [
 # Two instances on separate CUDA streams: while one is in a kernel, the other can be
 # dispatching. M2 showed this model is launch-bound, so overlapping dispatch with
 # execution is exactly the win available here.
-# Raised from 2 to 8 after the M9 ramp showed this stage, not the decoder, setting the
-# concurrency knee. The model is ~150 MB, so eight copies cost ~1.2 GB on a 48 GB card
-# — the constraint is dispatch parallelism, not memory.
+# THREE instances, chosen by measurement — more made it worse.
+#
+# Swept 2 (unbatched), 3 (batched) and 8 (batched). Best p99 at every level below 8 was
+# 3 instances with batching; 8 instances with batching was worse everywhere
+# (p99 at 4 sessions: 144ms with three, 164ms with eight).
+#
+# The reason is that instances and batching pull against each other here. Spreading
+# arrivals across 8 instances means the 2ms queue window almost never collects a second
+# request, so no batch ever forms, and 8 processes then contend for one GPU. Fewer
+# instances concentrate arrivals enough for batching to actually fire.
+#
+# At the knee the GPU sits at ~2% of its throughput ceiling (aggregate RTF 4.7 against
+# 207), so this stage is latency-bound, not throughput-bound: what limits concurrency is
+# the ~100ms of mostly-serial work per request, not the device.
 instance_group [
   {
-    count: 8
+    count: 3
     kind: KIND_GPU
     gpus: [ 0 ]
   }

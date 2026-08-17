@@ -127,6 +127,26 @@ pip3 install -q --no-cache-dir phonemizer==3.2.1 inflect==7.3.1 unidecode==1.3.8
   || warn "frontend deps incomplete"
 export PHONEMIZER_ESPEAK_LIBRARY=/usr/lib/x86_64-linux-gnu/libespeak-ng.so.1
 
+# ------------------------------------------------------- torch{vision,audio} stubs
+# The Triton image ships torchvision and torchaudio built against its own torch
+# (2.11+cu128, loading a CUDA 13 runtime) while this venv runs torch 2.6+cu124.
+# transformers imports both at module scope on the way to ANY model class, so the
+# mismatch breaks `from transformers import VitsModel` with errors that name libcudart,
+# not transformers. No venv-side pin reconciles it — the image is internally inconsistent.
+#
+# This system synthesizes speech: it never decodes an image or reads an audio file, so
+# both packages are pure collateral damage from an import chain meant for other models.
+# Shadow them with stubs that satisfy the import surface and raise loudly if ever called.
+log "Installing torchvision/torchaudio import stubs"
+SITE="$("$VENV/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+for pkg in torchvision torchaudio; do
+  if [ -d "$REPO_ROOT/scripts/${pkg}_stub" ]; then
+    rm -rf "${SITE:?}/$pkg"
+    cp -r "$REPO_ROOT/scripts/${pkg}_stub" "$SITE/$pkg"
+    echo "  stubbed $pkg"
+  fi
+done
+
 # ------------------------------------------------------------------ go
 if ! command -v go >/dev/null 2>&1 && [ ! -x "$OPT/go/bin/go" ]; then
   log "Installing Go ${GO_VERSION}"
