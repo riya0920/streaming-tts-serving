@@ -96,11 +96,27 @@ else
   warn "could not detect TensorRT version from trtexec; skipping python binding pin"
 fi
 
+# numpy MUST match the container's, because services.sh puts this venv on PYTHONPATH so
+# Triton's python backends can import torch and transformers — and PYTHONPATH always
+# precedes site-packages in sys.path, so the venv's numpy wins whether or not it was
+# "appended". Triton's python backend is compiled against numpy 1.x; handing it 2.x
+# corrupts string tensor deserialization with an unpack_from error that points at
+# triton_python_backend_utils and says nothing about numpy.
+SYS_NUMPY="$(/usr/bin/python3 -c 'import numpy; print(numpy.__version__)' 2>/dev/null || echo "")"
+if [ -n "$SYS_NUMPY" ]; then
+  log "Pinning venv numpy to the container's ${SYS_NUMPY}"
+fi
+
 log "Installing torch (cu12x) — this is ~2.5 GB"
 "$VENV/bin/pip" install -q torch --index-url https://download.pytorch.org/whl/cu124 \
   || warn "torch install failed; check the CUDA wheel index matches this image"
 "$VENV/bin/pip" install -q -r "$REPO_ROOT/export/requirements.txt" || warn "export deps incomplete"
 "$VENV/bin/pip" install -q fastapi "uvicorn[standard]" aiohttp || warn "baseline deps incomplete"
+"$VENV/bin/pip" install -q "tritonclient[grpc]" || warn "tritonclient missing — streaming/client.py will not run"
+# Last, so nothing else can pull numpy 2 back in as a transitive dependency.
+if [ -n "$SYS_NUMPY" ]; then
+  "$VENV/bin/pip" install -q "numpy==${SYS_NUMPY}" || warn "could not pin numpy to ${SYS_NUMPY}"
+fi
 [ -n "$TRT_PIN" ] && { "$VENV/bin/pip" install -q "tensorrt==${TRT_PIN}" \
   || warn "tensorrt==${TRT_PIN} unavailable; build engines with trtexec instead"; }
 

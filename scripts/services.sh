@@ -102,6 +102,21 @@ start_triton() {
     err "model_repo is empty — nothing to serve yet (expected until M5)"
     return 1
   fi
+
+  # Triton's python backend stubs inherit the server's environment, so pointing
+  # PYTHONPATH at the venv lets tts_frontend and vits_frontend import torch and
+  # transformers without a second multi-gigabyte install into the container's python.
+  # Appended, not prepended: Triton's own packages must keep priority.
+  local vsp
+  vsp="$(ls -d "${VENV:-/opt/tts/venv}"/lib/python*/site-packages 2>/dev/null | head -1)"
+  if [ -n "$vsp" ]; then
+    export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$vsp"
+    echo "  python backends will see $vsp"
+  else
+    err "venv site-packages not found — python backends will fail to import torch"
+  fi
+  export TTS_MODEL_DIR="${WORK}/models"
+
   _spawn triton tritonserver \
     --model-repository="$repo_arg" \
     --allow-metrics=true --metrics-port=8002 \

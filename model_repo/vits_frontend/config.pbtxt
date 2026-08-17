@@ -1,0 +1,64 @@
+name: "vits_frontend"
+backend: "python"
+
+# Ragged token sequences again, and this stage is where TTFA actually lives (114 ms of
+# a 121 ms end-to-end TTFA per M2), so padding every request to the longest in a batch
+# would directly inflate the number this project exists to minimize.
+#
+# Concurrency comes from instances on the GPU instead.
+max_batch_size: 0
+
+input [
+  {
+    name: "INPUT_IDS"
+    data_type: TYPE_INT64
+    dims: [ 1, -1 ]
+  },
+  {
+    name: "ATTENTION_MASK"
+    data_type: TYPE_INT64
+    dims: [ 1, -1 ]
+    optional: true
+  }
+]
+
+output [
+  {
+    name: "LATENTS"
+    data_type: TYPE_FP32
+    dims: [ 1, 192, -1 ]
+  },
+  {
+    name: "NUM_FRAMES"
+    data_type: TYPE_INT32
+    dims: [ 1 ]
+  }
+]
+
+# Two instances on separate CUDA streams: while one is in a kernel, the other can be
+# dispatching. M2 showed this model is launch-bound, so overlapping dispatch with
+# execution is exactly the win available here.
+instance_group [
+  {
+    count: 2
+    kind: KIND_GPU
+    gpus: [ 0 ]
+  }
+]
+
+parameters {
+  key: "model_dir"
+  value: { string_value: "/workspace/models/facebook__mms-tts-eng" }
+}
+parameters {
+  key: "noise_scale"
+  value: { string_value: "0.667" }
+}
+parameters {
+  key: "noise_scale_duration"
+  value: { string_value: "0.8" }
+}
+parameters {
+  key: "speaking_rate"
+  value: { string_value: "1.0" }
+}

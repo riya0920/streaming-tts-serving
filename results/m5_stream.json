@@ -1,0 +1,15 @@
+{
+  "milestone": "M5",
+  "gpu": "NVIDIA A40",
+  "note": "single client, concurrency 1, warmed. Concurrency behaviour is M9.",
+  "pipeline": ["tts_frontend (python/CPU)", "vits_frontend (python/GPU)", "tts_stream (C++/decoupled)"],
+  "cold_first_request": {
+    "ttfa_ms": 127.4, "frontend_ms": 115.5, "total_ms": 167.1,
+    "audio_seconds": 6.26, "chunks": 10, "underruns": 0, "rtf": 37.4
+  },
+  "warm_percentiles_n30": {
+    "ttfa_ms": {"p50": 74.8, "p90": 81.3, "p99": 126.5},
+    "total_ms": {"p50": 111.4, "p90": 118.8, "p99": 161.4}
+  },
+  "chunk_arrival_ms": [132, 139, 147, 154, 157, 160, 163, 166, 172, 178]
+}

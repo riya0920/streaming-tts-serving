@@ -136,6 +136,32 @@ class _CaptureDecoder(nn.Module):
         return spectrogram.new_zeros((spectrogram.shape[0], 1, 1))
 
 
+def capture_latents(model, **inputs) -> torch.Tensor:
+    """Run VITS's front half (encoder, duration predictor, flow) and return the latents
+    the decoder would have consumed, of shape [B, C, T_frames].
+
+    Rather than reimplementing alignment expansion, stochastic duration sampling and
+    flow inversion — intricate and sensitive to the transformers version — the model's
+    own forward pass runs with the decoder swapped for a capture stub. The stub records
+    its input and returns a one-sample dummy, so the expensive decode never happens.
+    This tracks upstream exactly and does not drift when internals change.
+
+    Shared by the offline synthesizer and the Triton vits_frontend backend so the served
+    path and the measured path cannot diverge.
+    """
+    real = model.decoder
+    capture = _CaptureDecoder()
+    model.decoder = capture
+    try:
+        with torch.inference_mode():
+            model(**inputs)
+    finally:
+        model.decoder = real
+    if capture.spectrogram is None:
+        raise RuntimeError("decoder was never called — VitsModel internals changed?")
+    return capture.spectrogram
+
+
 class ChunkedSynthesizer:
     def __init__(self, model, tokenizer, cfg: ChunkConfig | None = None, device: str = "cuda"):
         self.model = model.to(device).eval()
@@ -189,18 +215,7 @@ class ChunkedSynthesizer:
     def _latents(self, text: str) -> torch.Tensor:
         """Run encoder + duration + flow once, returning latents [B, C, T_frames]."""
         inputs = self.tok(text, return_tensors="pt").to(self.device)
-        real_decoder = self.model.decoder
-        capture = _CaptureDecoder()
-        self.model.decoder = capture
-        try:
-            with torch.inference_mode():
-                self.model(**inputs)
-        finally:
-            self.model.decoder = real_decoder
-
-        if capture.spectrogram is None:
-            raise RuntimeError("decoder was never called — VitsModel internals changed?")
-        return capture.spectrogram
+        return capture_latents(self.model, **inputs)
 
     # ------------------------------------------------------------------ the stream
     def stream(self, text: str) -> Iterator[AudioChunk]:

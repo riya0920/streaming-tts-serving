@@ -1,28 +1,39 @@
 #!/usr/bin/env bash
-# Compile the tts_stream C++ backend against the Triton backend SDK and install it into
-# the model repository. Runs inside the Triton container:
+# Compile the tts_stream C++ backend and install it into the model repository.
 #
-#   docker compose -f docker/docker-compose.yml exec triton build_backend.sh
+#   bash scripts/build_backend.sh
 #
-# Kept out of the Dockerfile's RUN layers so the C++ can be recompiled in a live
-# container during iteration without a 15 GB image rebuild.
+# Runs on the GPU box (inside the Triton pod). Kept separate from provisioning so the
+# C++ can be rebuilt in seconds during iteration.
 set -euo pipefail
 
-SRC=/workspace/backends/tts_stream
-BUILD=${SRC}/build
-DEST=/models/tts_stream/1
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$REPO/scripts/container_env.sh"
+[ -f /workspace/env.sh ] && source /workspace/env.sh
 
-command -v cmake >/dev/null || { echo "cmake missing — are you inside the tts-triton image?" >&2; exit 1; }
-[ -d "$SRC" ] || { echo "no source at $SRC — is backends/ mounted?" >&2; exit 1; }
+SRC="$REPO/backends/tts_stream"
+BUILD="$SRC/build"
+# Triton looks for backends under <backend-directory>/<backend-name>/libtriton_<name>.so
+DEST="${BACKEND_DIR:-/opt/tritonserver/backends}/tts_stream"
+TRITON_SRC="${TRITON_SRC_DIR:-/opt/tts/tools/triton-src}"
+
+command -v cmake >/dev/null || { echo "cmake missing — are you inside the Triton image?" >&2; exit 1; }
+[ -d "$SRC" ] || { echo "no source at $SRC" >&2; exit 1; }
+[ -d "$TRITON_SRC/backend/include" ] || {
+  echo "Triton backend SDK not at $TRITON_SRC — run scripts/provision.sh first" >&2; exit 1; }
 
 cmake -S "$SRC" -B "$BUILD" \
   -DCMAKE_BUILD_TYPE=Release \
-  -DTRITON_SRC_DIR=/opt/triton-src \
-  -DCMAKE_INSTALL_PREFIX="$BUILD/install"
+  -DTRITON_SRC_DIR="$TRITON_SRC"
 
 cmake --build "$BUILD" -j"$(nproc)"
 
 mkdir -p "$DEST"
 cp "$BUILD/libtriton_tts_stream.so" "$DEST/"
+echo
 echo "installed -> $DEST/libtriton_tts_stream.so"
-echo "reload with: curl -X POST localhost:8000/v2/repository/models/tts_stream/load"
+echo "undefined Triton symbols are resolved by the server at load time; this is expected:"
+nm -D --undefined-only "$DEST/libtriton_tts_stream.so" | grep -c TRITON || true
+echo
+echo "load it with:"
+echo "  curl -X POST localhost:8000/v2/repository/models/tts_stream/load"
