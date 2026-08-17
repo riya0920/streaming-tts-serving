@@ -1,0 +1,164 @@
+{
+  "model": "/workspace/models/facebook__mms-tts-eng",
+  "sampling_rate": 16000,
+  "seam_window_ms": 20.0,
+  "overlap_sweep": {
+    "0": {
+      "global_snr_db": 4.2,
+      "seam_snr_db": -4.9,
+      "wasted_fraction": 0.0
+    },
+    "2": {
+      "global_snr_db": 8.5,
+      "seam_snr_db": -3.0,
+      "wasted_fraction": 0.082
+    },
+    "4": {
+      "global_snr_db": 15.4,
+      "seam_snr_db": -2.4,
+      "wasted_fraction": 0.152
+    },
+    "8": {
+      "global_snr_db": 38.4,
+      "seam_snr_db": 5.1,
+      "wasted_fraction": 0.264
+    },
+    "11": {
+      "global_snr_db": 55.3,
+      "seam_snr_db": 31.4,
+      "wasted_fraction": 0.33
+    },
+    "13": {
+      "global_snr_db": 56.5,
+      "seam_snr_db": 31.6,
+      "wasted_fraction": 0.366
+    },
+    "16": {
+      "global_snr_db": 56.2,
+      "seam_snr_db": 31.6,
+      "wasted_fraction": 0.411
+    },
+    "20": {
+      "global_snr_db": 55.8,
+      "seam_snr_db": 31.3,
+      "wasted_fraction": 0.462
+    },
+    "26": {
+      "global_snr_db": 56.3,
+      "seam_snr_db": 31.6,
+      "wasted_fraction": 0.523
+    },
+    "32": {
+      "global_snr_db": 60.1,
+      "seam_snr_db": 31.5,
+      "wasted_fraction": 0.572
+    }
+  },
+  "first_chunk_sweep": {
+    "60": {
+      "ttfa_ms": 4.93,
+      "chunks": 13.0,
+      "wasted_fraction": 0.414,
+      "seam_snr_db": 31.5
+    },
+    "100": {
+      "ttfa_ms": 4.93,
+      "chunks": 12.3,
+      "wasted_fraction": 0.392,
+      "seam_snr_db": 31.6
+    },
+    "150": {
+      "ttfa_ms": 5.06,
+      "chunks": 12.0,
+      "wasted_fraction": 0.389,
+      "seam_snr_db": 31.9
+    },
+    "200": {
+      "ttfa_ms": 4.92,
+      "chunks": 11.3,
+      "wasted_fraction": 0.366,
+      "seam_snr_db": 31.6
+    },
+    "300": {
+      "ttfa_ms": 4.99,
+      "chunks": 11.0,
+      "wasted_fraction": 0.359,
+      "seam_snr_db": 31.7
+    },
+    "400": {
+      "ttfa_ms": 4.93,
+      "chunks": 10.7,
+      "wasted_fraction": 0.327,
+      "seam_snr_db": 31.3
+    },
+    "800": {
+      "ttfa_ms": 4.96,
+      "chunks": 10.0,
+      "wasted_fraction": 0.315,
+      "seam_snr_db": 32.1
+    }
+  },
+  "crossfade_sweep": {
+    "0.0": {
+      "linear": {
+        "snr_db": 31.6,
+        "step_ratio": 10.25
+      },
+      "equal_power": {
+        "snr_db": 31.6,
+        "step_ratio": 10.25
+      }
+    },
+    "0.5": {
+      "linear": {
+        "snr_db": 31.6,
+        "step_ratio": 10.25
+      },
+      "equal_power": {
+        "snr_db": 21.9,
+        "step_ratio": 10.25
+      }
+    },
+    "1.0": {
+      "linear": {
+        "snr_db": 31.6,
+        "step_ratio": 10.25
+      },
+      "equal_power": {
+        "snr_db": 19.5,
+        "step_ratio": 10.11
+      }
+    },
+    "2.0": {
+      "linear": {
+        "snr_db": 31.6,
+        "step_ratio": 10.25
+      },
+      "equal_power": {
+        "snr_db": 18.2,
+        "step_ratio": 10.11
+      }
+    },
+    "5.0": {
+      "linear": {
+        "snr_db": 31.6,
+        "step_ratio": 10.25
+      },
+      "equal_power": {
+        "snr_db": 15.6,
+        "step_ratio": 9.98
+      }
+    },
+    "10.0": {
+      "linear": {
+        "snr_db": 31.6,
+        "step_ratio": 10.25
+      },
+      "equal_power": {
+        "snr_db": 11.6,
+        "step_ratio": 9.67
+      }
+    },
+    "reference_step_ratio": 10.26
+  }
+}

@@ -61,44 +61,75 @@ The HiFi-GAN decoder is convolutional with a large receptive field. Slice the la
 decode each slice independently and the seams click audibly: each chunk's edge samples
 were computed without the neighboring context they need.
 
-Fix, in three steps:
+Fix, in two steps — the third one turned out to be unnecessary:
 
 1. **Decode with overlap.** For a chunk covering frames `[a, b)`, feed the decoder
-   `[a - P, b + P)` where `P` is a padding of `overlap_frames`.
+   `[a - P, b + P)` where `P` is `overlap_frames`.
 2. **Trim to the valid center.** Discard `P * hop` samples from each end of the decoded
    waveform — those are the contaminated ones.
-3. **Crossfade the seam.** Adjacent chunks still meet at a hard boundary. Overlap the
-   final `X` samples of chunk *i* with the first `X` of chunk *i+1* and blend with an
-   equal-power (constant-power) curve rather than linear:
 
-   ```
-   out[n] = cos(θ)·a[n] + sin(θ)·b[n],   θ = (π/2)·(n/X)
-   ```
+`P` must be at least the decoder's effective receptive field. **Measured at 13 frames
+(208 ms)** for `mms-tts-eng` by `export/probe_receptive_field.py`. The M3 sweep shows a
+sharp cliff exactly there: seam SNR is 5.1 dB at `P=8`, jumps to 31.4 dB at `P=11`, and is
+flat beyond — do not guess this for a different checkpoint.
 
-   Equal-power, not linear, because a linear crossfade dips in perceived loudness at the
-   midpoint when the two signals are correlated — which they are, since they are two
-   renderings of the same underlying latents.
+**The crossfade was a mistake, twice over.** The original design called for an equal-power
+(cos/sin) blend across the seam, on the reasoning that a linear fade dips in loudness at
+the midpoint for correlated signals. That reasoning is inverted: equal-power is the right
+choice for *uncorrelated* signals, where powers add. The two signals here are the same
+audio decoded with slightly different context — near-perfectly correlated, so amplitudes
+add and `cos(θ)x + sin(θ)x` peaks at `√2·x`, putting a **+3 dB bump on every seam**.
+Measured seam SNR fell from 31.6 dB with no fade to 11.6 dB with a 10 ms equal-power fade.
 
-`P` (decode padding) and `X` (crossfade length) are separate knobs. `P` must be at least
-the decoder's effective receptive field in frames to fully remove the artifact; `X` only
-needs to be long enough to mask any residual discontinuity, typically far shorter.
+Correcting it to linear made the fade *neutral* rather than helpful — `(1-t)x + tx = x`
+exactly. Which raised the real question: does the seam need fixing at all once overlap is
+sufficient? A discontinuity metric (first difference at the boundary against the local
+median, which SNR-vs-reference cannot see) answers it:
 
-### Chunk size is a measured tradeoff
-
-| Smaller chunks | Larger chunks |
+| | step ratio |
 |---|---|
-| ✅ lower TTFA | ❌ higher TTFA |
-| ❌ overlap overhead amortizes worse (`2P/(chunk+2P)` of the decode is thrown away) | ✅ overlap overhead amortizes well |
-| ❌ more per-chunk fixed cost: kernel launches, response-queue writes | ✅ fewer fixed costs |
-| ❌ more chances to underrun if RTF dips | ✅ more slack |
+| chunked, overlap 13, no crossfade | 10.25 |
+| single-pass decode, same positions | 10.26 |
 
-Starting point: **~200 ms of audio per chunk**, to be confirmed by the M3 sweep. Convert
-to frames with `frames = round(0.200 * sampling_rate / hop_length)` — `hop_length` is the
-product of the model's `upsample_rates`, and `export/inspect_model.py` prints it rather
-than assuming 256.
+Identical. The boundary is indistinguishable from ordinary waveform motion. **Crossfade
+defaults to 0.** The machinery stays because FP16 and TensorRT will make the two decodes
+diverge more than FP32 does, and M3 established exactly what "no seam" measures like.
 
-**The sweep is the deliverable, not the number.** Plot TTFA, wasted-decode fraction, and
-a boundary-discontinuity metric against chunk size, and pick from the curve.
+### Chunk size: progressive, not fixed
+
+Because the receptive field (13 frames) is *larger* than a 200 ms chunk (12 frames), a
+fixed 200 ms chunking decodes 38 frames to keep 12 — 68% waste on every chunk, forever,
+to buy a latency benefit only the first chunk actually delivers.
+
+So chunk size grows: small first chunk to set TTFA, doubling up to a cap. Measured on a
+14.9 s utterance, overlap 13:
+
+```
+chunk 0:  keeps 12, decodes 25   (52% waste — worth it, this is TTFA)
+chunk 3+: keeps 50, decodes 76   (34% waste — steady state)
+```
+
+Decode cost is ~4.9 ms per chunk regardless of size, because of the launch floor.
+
+### Settled parameters
+
+From `results/m3_sweep.json`, not from intuition:
+
+| Parameter | Value | Why |
+|---|---|---|
+| `overlap_frames` | **13** | The measured receptive field. Cliff at 11; flat above. |
+| `first_chunk_ms` | **200** | TTFA is frontend-dominated, so shrinking below 200 ms buys nothing measurable (decode-side TTFA is ~5 ms at every size tested from 60–800 ms). |
+| `max_chunk_ms` | **800** | Amortizes the overlap tax from 52% to 34% once the listener is already hearing audio. |
+| `crossfade_ms` | **0** | Unnecessary at sufficient overlap. See above. |
+
+Convert chunk sizes to frames with `frames = round(ms/1000 * sampling_rate / hop_length)`.
+`hop_length` is the product of the model's `upsample_rates` — 256 here, but
+`export/fetch_model.py` prints it rather than assuming.
+
+One operational consequence: per-chunk decode cost is ~4.9 ms for every shape, but the
+**first** decode of a new tensor shape costs ~66 ms while cuDNN picks an algorithm. With
+progressive sizing there are only 3–4 distinct shapes, so warm them all at startup. The
+same applies to TensorRT optimization profiles in M4.
 
 ---
 

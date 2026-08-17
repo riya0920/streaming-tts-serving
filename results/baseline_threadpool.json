@@ -1,0 +1,123 @@
+{
+  "target": {
+    "ok": true,
+    "mode": "threadpool",
+    "device": "cuda",
+    "model": "facebook/mms-tts-eng",
+    "sampling_rate": 16000
+  },
+  "levels": [
+    {
+      "concurrency": 1,
+      "requests": 207,
+      "errors": 0,
+      "throughput_rps": 10.35,
+      "aggregate_rtf": 74.66,
+      "latency_ms": {
+        "p50": 78.6,
+        "p90": 122.8,
+        "p99": 140.1,
+        "max": 159.8,
+        "mean": 82.3
+      }
+    },
+    {
+      "concurrency": 2,
+      "requests": 286,
+      "errors": 0,
+      "throughput_rps": 14.3,
+      "aggregate_rtf": 96.52,
+      "latency_ms": {
+        "p50": 114.5,
+        "p90": 171.7,
+        "p99": 243.0,
+        "max": 292.8,
+        "mean": 117.7
+      }
+    },
+    {
+      "concurrency": 4,
+      "requests": 273,
+      "errors": 0,
+      "throughput_rps": 13.65,
+      "aggregate_rtf": 92.14,
+      "latency_ms": {
+        "p50": 230.3,
+        "p90": 373.2,
+        "p99": 672.5,
+        "max": 734.9,
+        "mean": 250.1
+      }
+    },
+    {
+      "concurrency": 8,
+      "requests": 82,
+      "errors": 0,
+      "throughput_rps": 4.1,
+      "aggregate_rtf": 25.16,
+      "latency_ms": {
+        "p50": 1583.1,
+        "p90": 1895.1,
+        "p99": 2866.2,
+        "max": 2866.2,
+        "mean": 1618.7
+      }
+    },
+    {
+      "concurrency": 16,
+      "requests": 74,
+      "errors": 0,
+      "throughput_rps": 3.7,
+      "aggregate_rtf": 23.39,
+      "latency_ms": {
+        "p50": 3460.2,
+        "p90": 5357.0,
+        "p99": 6607.3,
+        "max": 6607.3,
+        "mean": 3688.3
+      }
+    },
+    {
+      "concurrency": 32,
+      "requests": 82,
+      "errors": 0,
+      "throughput_rps": 4.1,
+      "aggregate_rtf": 27.73,
+      "latency_ms": {
+        "p50": 6083.8,
+        "p90": 7549.3,
+        "p99": 11332.9,
+        "max": 11332.9,
+        "mean": 6339.0
+      }
+    },
+    {
+      "concurrency": 64,
+      "requests": 66,
+      "errors": 0,
+      "throughput_rps": 3.3,
+      "aggregate_rtf": 19.9,
+      "latency_ms": {
+        "p50": 9098.7,
+        "p90": 14056.5,
+        "p99": 14159.8,
+        "max": 14159.8,
+        "mean": 10543.3
+      }
+    },
+    {
+      "concurrency": 128,
+      "requests": 0,
+      "errors": 0,
+      "throughput_rps": 0.0,
+      "aggregate_rtf": 0.0,
+      "latency_ms": {
+        "p50": NaN,
+        "p90": NaN,
+        "p99": NaN,
+        "max": null,
+        "mean": null
+      }
+    }
+  ]
+}

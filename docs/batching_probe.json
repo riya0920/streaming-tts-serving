@@ -1,0 +1,165 @@
+{
+  "model": "/workspace/models/facebook__mms-tts-eng",
+  "sampling_rate": 16000,
+  "hop": 256,
+  "decoder_batch_scaling": {
+    "100ms": {
+      "1": {
+        "total_ms": 5.285,
+        "per_stream_ms": 5.285
+      },
+      "2": {
+        "total_ms": 5.295,
+        "per_stream_ms": 2.6473
+      },
+      "4": {
+        "total_ms": 5.495,
+        "per_stream_ms": 1.3738
+      },
+      "8": {
+        "total_ms": 5.486,
+        "per_stream_ms": 0.6858
+      },
+      "16": {
+        "total_ms": 6.987,
+        "per_stream_ms": 0.4367
+      },
+      "32": {
+        "total_ms": 9.964,
+        "per_stream_ms": 0.3114
+      },
+      "64": {
+        "total_ms": 19.368,
+        "per_stream_ms": 0.3026
+      },
+      "128": {
+        "total_ms": 34.928,
+        "per_stream_ms": 0.2729
+      }
+    },
+    "200ms": {
+      "1": {
+        "total_ms": 4.394,
+        "per_stream_ms": 4.3936
+      },
+      "2": {
+        "total_ms": 4.381,
+        "per_stream_ms": 2.1906
+      },
+      "4": {
+        "total_ms": 4.35,
+        "per_stream_ms": 1.0875
+      },
+      "8": {
+        "total_ms": 5.566,
+        "per_stream_ms": 0.6957
+      },
+      "16": {
+        "total_ms": 10.08,
+        "per_stream_ms": 0.63
+      },
+      "32": {
+        "total_ms": 18.289,
+        "per_stream_ms": 0.5715
+      },
+      "64": {
+        "total_ms": 34.774,
+        "per_stream_ms": 0.5433
+      },
+      "128": {
+        "total_ms": 67.501,
+        "per_stream_ms": 0.5274
+      }
+    },
+    "400ms": {
+      "1": {
+        "total_ms": 4.497,
+        "per_stream_ms": 4.4973
+      },
+      "2": {
+        "total_ms": 4.431,
+        "per_stream_ms": 2.2153
+      },
+      "4": {
+        "total_ms": 5.566,
+        "per_stream_ms": 1.3914
+      },
+      "8": {
+        "total_ms": 10.799,
+        "per_stream_ms": 1.3498
+      },
+      "16": {
+        "total_ms": 19.028,
+        "per_stream_ms": 1.1893
+      },
+      "32": {
+        "total_ms": 35.84,
+        "per_stream_ms": 1.12
+      },
+      "64": {
+        "total_ms": 70.101,
+        "per_stream_ms": 1.0953
+      },
+      "128": {
+        "total_ms": 134.156,
+        "per_stream_ms": 1.0481
+      }
+    },
+    "200ms+ovl16": {
+      "1": {
+        "total_ms": 4.724,
+        "per_stream_ms": 4.7237
+      },
+      "2": {
+        "total_ms": 4.74,
+        "per_stream_ms": 2.37
+      },
+      "4": {
+        "total_ms": 9.597,
+        "per_stream_ms": 2.3994
+      },
+      "8": {
+        "total_ms": 17.751,
+        "per_stream_ms": 2.2188
+      },
+      "16": {
+        "total_ms": 32.389,
+        "per_stream_ms": 2.0243
+      },
+      "32": {
+        "total_ms": 61.607,
+        "per_stream_ms": 1.9252
+      },
+      "64": {
+        "total_ms": 118.976,
+        "per_stream_ms": 1.859
+      },
+      "128": {
+        "total_ms": 233.252,
+        "per_stream_ms": 1.8223
+      }
+    }
+  },
+  "cpu_vs_gpu": {
+    "full_forward": {
+      "gpu_ms": 66.851,
+      "wall_ms": 56.945,
+      "cpu_overhead_ms": -9.907
+    },
+    "one_chunk_decode": {
+      "gpu_ms": 4.696,
+      "wall_ms": 4.692,
+      "cpu_overhead_ms": -0.003
+    }
+  },
+  "stream_capacity_estimate": {
+    "1": 41,
+    "2": 81,
+    "4": 80,
+    "8": 87,
+    "16": 95,
+    "32": 100,
+    "64": 103,
+    "128": 105
+  }
+}

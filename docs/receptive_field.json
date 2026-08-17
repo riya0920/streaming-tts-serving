@@ -1,0 +1,68 @@
+{
+  "model": "/workspace/models/facebook__mms-tts-eng",
+  "hop": 256,
+  "sampling_rate": 16000,
+  "threshold_db": -60.0,
+  "receptive_field_frames": 13,
+  "receptive_field_ms": 208.0,
+  "per_trial_extent_frames": [
+    [
+      10.05,
+      11.77
+    ],
+    [
+      9.44,
+      11.87
+    ],
+    [
+      10.05,
+      11.86
+    ],
+    [
+      9.54,
+      12.09
+    ],
+    [
+      9.49,
+      11.54
+    ]
+  ],
+  "overlap_cost": {
+    "0": {
+      "decoded_frames": 12,
+      "wasted_fraction": 0.0,
+      "sufficient": false
+    },
+    "2": {
+      "decoded_frames": 16,
+      "wasted_fraction": 0.25,
+      "sufficient": false
+    },
+    "4": {
+      "decoded_frames": 20,
+      "wasted_fraction": 0.4,
+      "sufficient": false
+    },
+    "6": {
+      "decoded_frames": 24,
+      "wasted_fraction": 0.5,
+      "sufficient": false
+    },
+    "8": {
+      "decoded_frames": 28,
+      "wasted_fraction": 0.571,
+      "sufficient": false
+    },
+    "12": {
+      "decoded_frames": 36,
+      "wasted_fraction": 0.667,
+      "sufficient": false
+    },
+    "16": {
+      "decoded_frames": 44,
+      "wasted_fraction": 0.727,
+      "sufficient": true
+    }
+  },
+  "recommended_overlap": 13
+}

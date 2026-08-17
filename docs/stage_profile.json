@@ -1,0 +1,36 @@
+{
+  "model": "/workspace/models/facebook__mms-tts-eng",
+  "audio_seconds_per_forward": 5.056,
+  "total_ms": 69.792,
+  "stages_ms": {
+    "text_encoder": 5.863,
+    "duration_predictor": 15.264,
+    "flow": 9.911,
+    "decoder": 38.019
+  },
+  "stage_calls_per_forward": {
+    "text_encoder": 1.0,
+    "duration_predictor": 1.0,
+    "flow": 1.0,
+    "decoder": 1.0
+  },
+  "unaccounted_ms": 0.735,
+  "decoder_length_scaling_ms": {
+    "4": 4.585,
+    "8": 4.585,
+    "12": 4.608,
+    "24": 4.634,
+    "48": 4.576,
+    "96": 5.054,
+    "192": 10.151,
+    "384": 18.8
+  },
+  "decoder_batch_scaling_ms": {
+    "1": 11.517,
+    "2": 21.946,
+    "4": 41.7,
+    "8": 81.04,
+    "16": 155.521,
+    "32": 308.27
+  }
+}

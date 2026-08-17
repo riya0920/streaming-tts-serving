@@ -100,7 +100,12 @@ async def run_level(
     return {
         "concurrency": concurrency,
         "requests": len(samples),
+        "completions": len(ok),
         "errors": len(samples) - len(ok),
+        # A level where nothing finished inside the window is total collapse, but it
+        # produces zero samples and therefore zero *errors* — which reads like success
+        # unless it is called out explicitly.
+        "collapsed": len(ok) == 0,
         "throughput_rps": round(len(ok) / wall, 2),
         # Aggregate real-time factor: audio-seconds produced per wall-clock second across
         # the whole system. Must exceed the number of live listeners you intend to serve.
@@ -140,12 +145,16 @@ async def main() -> None:
         print(f"  level {c:>4} ...", end="", flush=True)
         r = await run_level(args.url, c, args.duration, corpus, rng)
         results.append(r)
+        if r["collapsed"]:
+            print(f" COLLAPSED — 0 of {r['requests']} requests completed in {args.duration}s")
+            print("  stopping ramp")
+            break
         print(
             f" p50={r['latency_ms']['p50']:>8.1f}ms  p99={r['latency_ms']['p99']:>9.1f}ms"
-            f"  rps={r['throughput_rps']:>6.1f}  errs={r['errors']}"
+            f"  rps={r['throughput_rps']:>6.1f}  done={r['completions']:>4}  errs={r['errors']}"
         )
         # Stop climbing once the level is clearly broken; no point burning GPU minutes
-        # measuring how much worse a already-collapsed server can get.
+        # measuring how much worse an already-collapsed server can get.
         if r["errors"] > 0.2 * r["requests"]:
             print("  >20% errors — stopping ramp")
             break

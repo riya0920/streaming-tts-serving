@@ -14,20 +14,34 @@ of that fight.
 
 ## Status
 
-**Phase: bring-up.** Nothing below is measured yet. This section is the scoreboard and
-it stays honest: a number appears here only after `loadgen` produced it on real hardware,
-and the raw run artifact is committed under `results/`.
+**Phase: M0–M3 done, on an NVIDIA A40.** A number appears here only after it was produced
+on real hardware, with the raw artifact committed under `results/`.
 
 | Metric | Baseline (FastAPI) | Current | Target |
 |---|---|---|---|
-| TTFA p50 | — | — | < 80 ms |
-| TTFA p99 | — | — | < 150 ms |
-| Real-time factor (p01) | — | — | > 1.0 |
-| Max concurrent sessions at target p99 | — | — | discover |
-| GPU-seconds per audio-minute | — | — | discover |
+| TTFA p50 | n/a — no streaming | **121 ms** (single stream) | < 80 ms |
+| TTFA p99 | n/a — no streaming | — | < 150 ms |
+| Peak throughput | **13.7 rps** | — | — |
+| Aggregate real-time factor | **85–96x** | — | — |
+| p99 at concurrency 8 | **1.06–2.87 s** | — | < 150 ms |
+| Max concurrent sessions at target p99 | 8 before p99 > 1 s | — | discover |
 
-Targets are targets. If the honest answer turns out to be 210 ms at 900 sessions, that
-is what goes in the table.
+Of the 121 ms TTFA, **114 ms is the frontend** (text encoder + duration predictor + flow)
+and 7 ms is the audio decode — so latency here is frontend-bound, which the original
+design did not anticipate. See [docs/PROFILE.md](docs/PROFILE.md).
+
+Targets are targets. If the honest answer turns out to be 210 ms at 900 sessions, that is
+what goes in the table.
+
+### Measurement log
+
+| Milestone | Finding | Where |
+|---|---|---|
+| M1 | The *naive* async baseline beats the *competent* threadpool one under load — uncontrolled GPU concurrency is worse than a queue | [docs/BASELINE.md](docs/BASELINE.md) |
+| M2 | Decoder is launch-bound, not compute-bound: 96x the work costs 1.10x the time | [docs/PROFILE.md](docs/PROFILE.md) |
+| M2 | Batching is free only to B≈4–8, which sets the batching window | [docs/PROFILE.md](docs/PROFILE.md) |
+| M3 | Receptive field (13 frames) exceeds the 200 ms chunk; overlap alone removes seams | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| M3 | The crossfade was unnecessary, and the equal-power curve was actively harmful | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 
 ---
 
