@@ -38,9 +38,12 @@ output [
 # Two instances on separate CUDA streams: while one is in a kernel, the other can be
 # dispatching. M2 showed this model is launch-bound, so overlapping dispatch with
 # execution is exactly the win available here.
+# Raised from 2 to 8 after the M9 ramp showed this stage, not the decoder, setting the
+# concurrency knee. The model is ~150 MB, so eight copies cost ~1.2 GB on a 48 GB card
+# — the constraint is dispatch parallelism, not memory.
 instance_group [
   {
-    count: 2
+    count: 8
     kind: KIND_GPU
     gpus: [ 0 ]
   }

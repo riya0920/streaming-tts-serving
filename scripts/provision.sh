@@ -154,21 +154,26 @@ done
 
 # ------------------------------------------------------------ observability
 # These never needed Docker; compose was only ever packaging convenience.
-fetch_tar() { # url, strip-dir-name, dest
-  local url="$1" name="$2"
-  [ -d "$OPT/$name" ] && { echo "  $name already installed"; return 0; }
+# strip: number of leading path components to drop. Not every release tarball wraps its
+# contents in a directory — otelcol's does not, and stripping one component there
+# silently discards the entire archive, leaving an empty directory and a "No such file
+# or directory" failure much later at start time.
+fetch_tar() { # url, name, strip
+  local url="$1" name="$2" strip="${3:-1}"
+  [ -n "$(ls -A "$OPT/$name" 2>/dev/null)" ] && { echo "  $name already installed"; return 0; }
   echo "  fetching $name"
   curl -fsSL "$url" -o /tmp/"$name".tgz || { warn "download failed: $name"; return 1; }
   mkdir -p "$OPT/$name"
-  tar -xzf /tmp/"$name".tgz -C "$OPT/$name" --strip-components=1
+  tar -xzf /tmp/"$name".tgz -C "$OPT/$name" --strip-components="$strip"
   rm -f /tmp/"$name".tgz
+  [ -n "$(ls -A "$OPT/$name" 2>/dev/null)" ] || warn "$name extracted empty — wrong strip depth?"
 }
 
 log "Installing observability binaries into $OPT"
-fetch_tar "https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-amd64.tar.gz" prometheus
-fetch_tar "https://dl.grafana.com/oss/release/grafana-${GRAFANA_VERSION}.linux-amd64.tar.gz" grafana
-fetch_tar "https://github.com/jaegertracing/jaeger/releases/download/v${JAEGER_VERSION}/jaeger-${JAEGER_VERSION}-linux-amd64.tar.gz" jaeger
-fetch_tar "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTELCOL_VERSION}/otelcol-contrib_${OTELCOL_VERSION}_linux_amd64.tar.gz" otelcol
+fetch_tar "https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-amd64.tar.gz" prometheus 1
+fetch_tar "https://dl.grafana.com/oss/release/grafana-${GRAFANA_VERSION}.linux-amd64.tar.gz" grafana 1
+fetch_tar "https://github.com/jaegertracing/jaeger/releases/download/v${JAEGER_VERSION}/jaeger-${JAEGER_VERSION}-linux-amd64.tar.gz" jaeger 1
+fetch_tar "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTELCOL_VERSION}/otelcol-contrib_${OTELCOL_VERSION}_linux_amd64.tar.gz" otelcol 0
 
 # No DCGM exporter here: it wants privileged access we do not have inside a pod, and
 # Triton already exports nv_gpu_utilization / nv_gpu_memory_used_bytes / nv_gpu_power_usage

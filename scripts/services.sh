@@ -70,10 +70,10 @@ start_jaeger() {
   # OTLP receivers moved off the default 4317/4318 to leave those to the collector.
   COLLECTOR_OTLP_ENABLED=true \
   SPAN_STORAGE_TYPE=memory \
+  # --query.host-port was removed in Jaeger 1.6x; the UI defaults to 16686 anyway.
   _spawn jaeger "$OPT/jaeger/jaeger-all-in-one" \
     --collector.otlp.grpc.host-port=:5317 \
-    --collector.otlp.http.host-port=:5318 \
-    --query.host-port=:16686
+    --collector.otlp.http.host-port=:5318
 }
 
 start_prometheus() {

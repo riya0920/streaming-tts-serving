@@ -48,7 +48,7 @@ output [
 # specific win available.
 instance_group [
   {
-    count: 2
+    count: 4
     kind: KIND_GPU
     gpus: [ 0 ]
   }

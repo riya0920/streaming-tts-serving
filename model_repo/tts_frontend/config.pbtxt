@@ -41,7 +41,7 @@ output [
 # competing with the decoder for anything.
 instance_group [
   {
-    count: 4
+    count: 8
     kind: KIND_CPU
   }
 ]

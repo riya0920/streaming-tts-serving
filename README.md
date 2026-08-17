@@ -14,24 +14,29 @@ of that fight.
 
 ## Status
 
-**Phase: M0–M3 done, on an NVIDIA A40.** A number appears here only after it was produced
-on real hardware, with the raw artifact committed under `results/`.
+**Built and measured end to end on an NVIDIA A40.** Every number was produced on real
+hardware, with the raw artifact committed under `results/`.
 
-| Metric | Baseline (FastAPI) | Current | Target |
+| Metric | Baseline (FastAPI) | Measured | Target |
 |---|---|---|---|
-| TTFA p50 | n/a — no streaming | **121 ms** (single stream) | < 80 ms |
-| TTFA p99 | n/a — no streaming | — | < 150 ms |
-| Peak throughput | **13.7 rps** | — | — |
-| Aggregate real-time factor | **85–96x** | — | — |
-| p99 at concurrency 8 | **1.06–2.87 s** | — | < 150 ms |
-| Max concurrent sessions at target p99 | 8 before p99 > 1 s | — | discover |
+| TTFA p50 | n/a — no streaming | **102 ms** | < 80 ms |
+| TTFA p99 | n/a — no streaming | **134 ms** | < 150 ms ✅ |
+| Concurrent sessions at that p99 | — | **2** (continuously speaking) | 3,200 ❌ |
+| Underruns | n/a | **0** at every level | 0 ✅ |
+| Aggregate real-time factor | 85–96x | **207x** | — |
+| Decoder speedup (TensorRT FP16) | 1.0x | **4.07x** | — |
+| Whole-model GPU time reduction | — | **~47%** | 62% ❌ |
 
-Of the 121 ms TTFA, **114 ms is the frontend** (text encoder + duration predictor + flow)
-and 7 ms is the audio decode — so latency here is frontend-bound, which the original
-design did not anticipate. See [docs/PROFILE.md](docs/PROFILE.md).
+**The p99 latency target is met. The concurrency target is missed by more than two orders
+of magnitude,** and [docs/LOADTEST.md](docs/LOADTEST.md) says exactly why: 100% of the
+latency tail is `vits_frontend` — the stochastic duration predictor and flow that could
+not be exported to TensorRT, because the duration predictor samples `randn` internally
+and so is not a pure function of its inputs. The decoder that got the 4x speedup never
+appears in the tail at all.
 
-Targets are targets. If the honest answer turns out to be 210 ms at 900 sessions, that is
-what goes in the table.
+That is the project's most useful result. The optimization went precisely where the
+profile said the GPU time was, and the actual constraint was somewhere else — visible
+only after instrumenting the assembled system and loading it until it broke.
 
 ### Measurement log
 
@@ -42,6 +47,9 @@ what goes in the table.
 | M2 | Batching is free only to B≈4–8, which sets the batching window | [docs/PROFILE.md](docs/PROFILE.md) |
 | M3 | Receptive field (13 frames) exceeds the 200 ms chunk; overlap alone removes seams | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | M3 | The crossfade was unnecessary, and the equal-power curve was actively harmful | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| M4 | TensorRT conversion is lossless (0.116 dB LSD); all FP16 error is precision (1.52 dB) | [docs/TENSORRT.md](docs/TENSORRT.md) |
+| M9 | TTFA is length-independent — 9.5x the words costs 1.4x the latency | [docs/LOADTEST.md](docs/LOADTEST.md) |
+| M9 | 100% of the latency tail is the one stage that stayed in PyTorch | [docs/LOADTEST.md](docs/LOADTEST.md) |
 
 ---
 
