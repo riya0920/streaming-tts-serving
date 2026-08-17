@@ -82,11 +82,27 @@ log "Python venv at $VENV"
 [ -d "$VENV" ] || python3 -m venv "$VENV"
 "$VENV/bin/pip" install -q --upgrade pip wheel setuptools
 
+# TensorRT python bindings MUST match the container's TensorRT, or engines built here
+# will not load in Triton's tensorrt backend. `pip install tensorrt` resolves to the
+# newest release (11.x) against a 10.3 container — a mismatch that stays invisible until
+# the model fails to load much later. Pin to whatever trtexec reports.
+TRT_VER="$(trtexec --help 2>&1 | grep -oP 'TensorRT v\K[0-9]+' | head -1)"
+if [ -n "$TRT_VER" ]; then
+  # v100300 -> 10.3.0
+  TRT_PIN="$((10#${TRT_VER:0:2})).$((10#${TRT_VER:2:2})).$((10#${TRT_VER:4:2}))"
+  log "Pinning TensorRT python bindings to ${TRT_PIN} (matches trtexec)"
+else
+  TRT_PIN=""
+  warn "could not detect TensorRT version from trtexec; skipping python binding pin"
+fi
+
 log "Installing torch (cu12x) — this is ~2.5 GB"
 "$VENV/bin/pip" install -q torch --index-url https://download.pytorch.org/whl/cu124 \
   || warn "torch install failed; check the CUDA wheel index matches this image"
 "$VENV/bin/pip" install -q -r "$REPO_ROOT/export/requirements.txt" || warn "export deps incomplete"
 "$VENV/bin/pip" install -q fastapi "uvicorn[standard]" aiohttp || warn "baseline deps incomplete"
+[ -n "$TRT_PIN" ] && { "$VENV/bin/pip" install -q "tensorrt==${TRT_PIN}" \
+  || warn "tensorrt==${TRT_PIN} unavailable; build engines with trtexec instead"; }
 
 # Python backend deps go into the SYSTEM python, not the venv — Triton's python backend
 # stub runs against the container's interpreter.

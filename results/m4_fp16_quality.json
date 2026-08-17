@@ -1,0 +1,15 @@
+{
+  "trt32_vs_torch": {
+    "snr_db": 58.21,
+    "lsd_db": 0.116
+  },
+  "trt16_vs_torch": {
+    "snr_db": 42.34,
+    "lsd_db": 1.524
+  },
+  "trt16_vs_trt32": {
+    "snr_db": 42.09,
+    "lsd_db": 1.525
+  },
+  "verdict": "marginal"
+}

@@ -1,0 +1,76 @@
+{
+  "trt_version": "10.3.0",
+  "engines": {
+    "decoder_fp32": {
+      "file": "vits_decoder_fp32.plan",
+      "build_seconds": 58.8,
+      "size_mb": 59.32,
+      "fp16": false
+    },
+    "encoder_fp32": {
+      "file": "vits_encoder_fp32.plan",
+      "build_seconds": 20.7,
+      "size_mb": 32.64,
+      "fp16": false
+    },
+    "decoder_fp16": {
+      "file": "vits_decoder_fp16.plan",
+      "build_seconds": 210.2,
+      "size_mb": 32.38,
+      "fp16": true
+    },
+    "encoder_fp16": {
+      "file": "vits_encoder_fp16.plan",
+      "build_seconds": 59.2,
+      "size_mb": 20.03,
+      "fp16": true
+    }
+  },
+  "decoder": {
+    "bench": {
+      "B1_T38": {
+        "torch_ms": 6.968,
+        "trt_fp32_ms": 3.417,
+        "trt_fp16_ms": 1.713,
+        "speedup_fp16": 4.07
+      },
+      "B1_T76": {
+        "torch_ms": 7.023,
+        "trt_fp32_ms": 4.151,
+        "trt_fp16_ms": 1.868,
+        "speedup_fp16": 3.76
+      },
+      "B8_T76": {
+        "torch_ms": 27.607,
+        "trt_fp32_ms": 16.967,
+        "trt_fp16_ms": 6.861,
+        "speedup_fp16": 4.02
+      },
+      "B32_T76": {
+        "torch_ms": 102.469,
+        "trt_fp32_ms": 63.026,
+        "trt_fp16_ms": 24.829,
+        "speedup_fp16": 4.13
+      }
+    },
+    "fp16_quality": [
+      {
+        "frames": 125,
+        "snr_db": 15.05,
+        "lsd_db": 1.643
+      },
+      {
+        "frames": 365,
+        "snr_db": 7.63,
+        "lsd_db": 2.867
+      },
+      {
+        "frames": 410,
+        "snr_db": 7.08,
+        "lsd_db": 2.606
+      }
+    ],
+    "fp16_verdict": "AUDIBLE"
+  },
+  "encoder": {}
+}

@@ -49,3 +49,6 @@ Thumbs.db
 
 # per-pod connection details
 .box.env
+
+# regenerable A/B renders (see export/make_ab_audio.py)
+results/audio/
