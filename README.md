@@ -4,6 +4,9 @@ Streaming TTS on Triton. VITS, TensorRT FP16, chunked decoding, Go gateway in fr
 
 The goal was a first audio chunk in under 150ms at p99 (not mean) with real concurrency.
 
+Demo with audio: https://riya0920.github.io/streaming-tts-serving/ — FP32 vs FP16 side by
+side, the chunk arrival timeline, and the latency curve.
+
 ## Numbers
 
 Measured on 2x RTX 6000 Ada. Raw JSON in `results/`, caveats in [docs/RESULTS.md](docs/RESULTS.md).

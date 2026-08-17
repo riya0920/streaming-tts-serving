@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>streaming-tts-serving — demo</title>
+<style>
+  :root {
+    color-scheme: light;
+    --plane:      #f9f9f7;
+    --surface:    #fcfcfb;
+    --ink:        #0b0b0b;
+    --ink-2:      #52514e;
+    --muted:      #898781;
+    --grid:       #e1e0d9;
+    --axis:       #c3c2b7;
+    --border:     rgba(11,11,11,0.10);
+    --s-low:      #86b6ef;
+    --s-mid:      #2a78d6;
+    --s-high:     #104281;
+    --good:       #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --plane:    #0d0d0d;
+      --surface:  #1a1a19;
+      --ink:      #ffffff;
+      --ink-2:    #c3c2b7;
+      --muted:    #898781;
+      --grid:     #2c2c2a;
+      --axis:     #383835;
+      --border:   rgba(255,255,255,0.10);
+      --s-low:    #86b6ef;
+      --s-mid:    #3987e5;
+      --s-high:   #184f95;
+      --good:     #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --plane: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+    --muted: #898781; --grid: #2c2c2a; --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --s-low: #86b6ef; --s-mid: #3987e5; --s-high: #184f95; --good: #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--plane);
+    color: var(--ink);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 48px 20px 96px; }
+  h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 20px; margin: 48px 0 4px; letter-spacing: -0.01em; }
+  h3 { font-size: 15px; margin: 0 0 10px; font-weight: 600; }
+  p  { margin: 10px 0; color: var(--ink-2); }
+  .lede { font-size: 17px; color: var(--ink-2); margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 14px; margin-top: 2px; }
+  a { color: inherit; text-decoration-color: var(--axis); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: currentColor; }
+  code { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 28px 0 8px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+  .tile .v { font-size: 27px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
+  .tile .k { font-size: 12.5px; color: var(--muted); margin-top: 5px; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin: 16px 0; }
+  .quote { color: var(--ink); font-size: 15px; margin: 0 0 14px; }
+  .quote::before { content: "\201C"; color: var(--muted); }
+  .quote::after  { content: "\201D"; color: var(--muted); }
+
+  .ab { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+  .lane .k { font-size: 12.5px; color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; gap: 7px; }
+  .swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  audio { width: 100%; height: 34px; }
+
+  figure { margin: 16px 0 0; }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  .chartbox { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 18px 10px; overflow-x: auto; }
+  /* Scroll rather than shrink: below this the axis labels stop being legible. */
+  svg { display: block; width: 100%; min-width: 560px; height: auto; }
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12.5px; color: var(--ink-2); margin: 2px 0 12px; }
+  .legend span { display: flex; align-items: center; gap: 7px; }
+
+  details, .tablescroll { margin-top: 12px; overflow-x: auto; }
+  summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+  table { border-collapse: collapse; font-size: 13.5px; margin-top: 12px; width: 100%; }
+  th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; font-variant-numeric: normal; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
+
+  ul { color: var(--ink-2); padding-left: 20px; }
+  li { margin: 7px 0; }
+  hr { border: 0; border-top: 1px solid var(--grid); margin: 40px 0; }
+
+  #tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .09s;
+    background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+    border-radius: 7px; padding: 7px 10px; font-size: 12.5px; line-height: 1.45;
+    box-shadow: 0 3px 14px rgba(0,0,0,.13); z-index: 10; white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>streaming-tts-serving</h1>
+  <p class="lede">VITS on Triton with a decoupled C++ backend, TensorRT FP16, and a Go gateway.
+  Everything below is a real artifact from the benchmark runs, not a mockup.</p>
+  <p class="sub"><a href="https://github.com/riya0920/streaming-tts-serving">Source on GitHub</a>
+  &nbsp;·&nbsp; measured on 2&times; NVIDIA RTX 6000 Ada</p>
+
+  <div class="tiles">
+    <div class="tile"><div class="v">113.8 ms</div><div class="k">p99 time to first audio</div></div>
+    <div class="tile"><div class="v">3,200</div><div class="k">held sessions, 10% duty</div></div>
+    <div class="tile"><div class="v">6.91&times;</div><div class="k">whole-pipeline GPU time</div></div>
+    <div class="tile"><div class="v">0</div><div class="k">underruns / rejections</div></div>
+  </div>
+
+  <h2>Does FP16 still sound right?</h2>
+  <p>The optimization only counts if the audio survives it. Same text, same latents, same
+  seed — decoded through stock PyTorch FP32 and through the TensorRT FP16 engine.
+  Measured SNR between them is <strong>42.3 dB</strong>, log-spectral distance
+  <strong>1.52 dB</strong>. Play them back to back.</p>
+
+  <div class="card">
+    <p class="quote">Sure, I can help with that.</p>
+    <div class="ab">
+      <div class="lane">
+        <div class="k"><span class="swatch" style="background:var(--s-low)"></span>PyTorch FP32</div>
+        <audio controls preload="none" src="audio/short_a_torch_fp32.wav"></audio>
+      </div>
+      <div class="lane">
+        <div class="k"><span class="swatch" style="background:var(--s-high)"></span>TensorRT FP16</div>
+        <audio controls preload="none" src="audio/short_c_trt_fp16.wav"></audio>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <p class="quote">Your flight leaves at four fifteen from gate B twelve, and boarding starts about forty minutes before that.</p>
+    <div class="ab">
+      <div class="lane">
+        <div class="k"><span class="swatch" style="background:var(--s-low)"></span>PyTorch FP32</div>
+        <audio controls preload="none" src="audio/medium_a_torch_fp32.wav"></audio>
+      </div>
+      <div class="lane">
+        <div class="k"><span class="swatch" style="background:var(--s-high)"></span>TensorRT FP16</div>
+        <audio controls preload="none" src="audio/medium_c_trt_fp16.wav"></audio>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <p class="quote">Doctor Chen's invoice came to twelve hundred forty seven dollars and fifty cents, due on March fourteenth.</p>
+    <p class="sub" style="margin-top:-8px">Written input was <code>Dr. Chen's invoice came to $1,247.50, due on 3/14.</code> —
+    the text normalizer expands currency, dates and abbreviations before the model sees them.</p>
+    <div class="ab">
+      <div class="lane">
+        <div class="k"><span class="swatch" style="background:var(--s-low)"></span>PyTorch FP32</div>
+        <audio controls preload="none" src="audio/numbers_a_torch_fp32.wav"></audio>
+      </div>
+      <div class="lane">
+        <div class="k"><span class="swatch" style="background:var(--s-high)"></span>TensorRT FP16</div>
+        <audio controls preload="none" src="audio/numbers_c_trt_fp16.wav"></audio>
+      </div>
+    </div>
+    <div class="lane" style="margin-top:16px">
+      <div class="k"><span class="swatch" style="background:var(--muted)"></span>The difference between them, amplified</div>
+      <audio controls preload="none" src="audio/numbers_d_fp16_error_amplified.wav"></audio>
+    </div>
+    <p class="sub">FP32 minus FP16, gained back up to audible level. This is what 42 dB of
+    SNR actually is: a faint ghost of the sentence, with the error concentrated on
+    fricatives and onsets rather than spread evenly. Quiet enough not to matter, structured
+    enough to prove it is precision loss and not noise.</p>
+  </div>
+
+  <h2>Audio starts before synthesis finishes</h2>
+  <p>A normal Triton model returns one response per request, so the first sample arrives
+  only after the last one is computed. This one runs <strong>decoupled</strong>: the C++
+  backend decodes the utterance in overlapping chunks and pushes each one out as it is
+  ready. The clip below is 6.26 seconds long. The first chunk left the server at
+  <strong>132 ms</strong>.</p>
+
+  <div class="card">
+    <div class="lane">
+      <div class="k"><span class="swatch" style="background:var(--s-mid)"></span>Streamed output, reassembled from 10 chunks</div>
+      <audio controls preload="none" src="audio/m5_streamed.wav"></audio>
+    </div>
+  </div>
+
+  <figure>
+    <div class="chartbox">
+      <div class="legend"><span><span class="swatch" style="background:var(--s-mid)"></span>chunk arrival</span></div>
+      <svg id="c-chunks" viewBox="0 0 720 150" role="img"
+           aria-label="Chunk arrival times: ten chunks arriving between 132 and 178 milliseconds after the request."></svg>
+    </div>
+    <figcaption>Ten chunks, all delivered within 178 ms, for six seconds of speech.
+    Chunk size ramps up after the first so latency is spent where a listener notices it.
+    Single client, warmed, NVIDIA A40 (<code>results/m5_stream.json</code>).</figcaption>
+    <details>
+      <summary>Table view</summary>
+      <table><thead><tr><th>Chunk</th><th>Arrival (ms)</th><th>Gap (ms)</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>132</td><td>—</td></tr><tr><td>2</td><td>139</td><td>7</td></tr>
+        <tr><td>3</td><td>147</td><td>8</td></tr><tr><td>4</td><td>154</td><td>7</td></tr>
+        <tr><td>5</td><td>157</td><td>3</td></tr><tr><td>6</td><td>160</td><td>3</td></tr>
+        <tr><td>7</td><td>163</td><td>3</td></tr><tr><td>8</td><td>166</td><td>3</td></tr>
+        <tr><td>9</td><td>172</td><td>6</td></tr><tr><td>10</td><td>178</td><td>6</td></tr>
+      </tbody></table>
+    </details>
+  </figure>
+
+  <h2>Latency under load</h2>
+  <p>Held sessions against time-to-first-audio, two GPUs, 10% duty cycle. The p50 barely
+  moves as load triples — it is the tail that pays, which is the whole reason the target
+  was written as p99 rather than as a mean.</p>
+
+  <figure>
+    <div class="chartbox">
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--s-low)"></span>p50</span>
+        <span><span class="swatch" style="background:var(--s-mid)"></span>p90</span>
+        <span><span class="swatch" style="background:var(--s-high)"></span>p99</span>
+      </div>
+      <svg id="c-lat" viewBox="0 0 720 300" role="img"
+           aria-label="Time to first audio at 1600, 2400 and 3200 held sessions. p99 rises from 44.6 to 113.8 milliseconds, staying under the 150 millisecond target."></svg>
+    </div>
+    <figcaption>Server-side latency: the load generator runs on the same host, so wide-area
+    network time is excluded. 15,599 requests at the top level, zero errors
+    (<code>results/m12_3200_2gpu.json</code>).</figcaption>
+    <details>
+      <summary>Table view</summary>
+      <table><thead><tr><th>Held sessions</th><th>p50</th><th>p90</th><th>p99</th><th>max</th><th>Requests</th><th>Underruns</th></tr></thead>
+      <tbody>
+        <tr><td>1,600</td><td>24.2</td><td>32.7</td><td>44.6</td><td>113.7</td><td>7,700</td><td>0</td></tr>
+        <tr><td>2,400</td><td>25.3</td><td>34.7</td><td>60.7</td><td>164.3</td><td>11,678</td><td>0</td></tr>
+        <tr><td>3,200</td><td>26.3</td><td>37.6</td><td>113.8</td><td>214.8</td><td>15,599</td><td>0</td></tr>
+      </tbody></table>
+    </details>
+  </figure>
+
+  <h2>What it cost to get there</h2>
+  <p>Whole pipeline, PyTorch against TensorRT, CUDA-event timed on the same utterances in
+  the exact chunk geometry the server uses. Weighted by audio produced rather than by
+  utterance count, so a two-word reply does not count the same as a ten-second one.</p>
+
+  <div class="tablescroll">
+  <table>
+    <thead><tr><th>Utterance</th><th>Audio</th><th>PyTorch</th><th>TensorRT</th><th>Speedup</th></tr></thead>
+    <tbody>
+      <tr><td>short</td><td>1.82 s</td><td>66.2 ms</td><td>10.2 ms</td><td>6.46&times;</td></tr>
+      <tr><td>medium</td><td>5.94 s</td><td>101.1 ms</td><td>14.3 ms</td><td>7.09&times;</td></tr>
+      <tr><td>long</td><td>9.79 s</td><td>133.3 ms</td><td>19.3 ms</td><td>6.92&times;</td></tr>
+      <tr><td>list</td><td>6.56 s</td><td>104.0 ms</td><td>14.8 ms</td><td>7.05&times;</td></tr>
+      <tr><td><strong>weighted</strong></td><td><strong>24.11 s</strong></td><td><strong>404.6 ms</strong></td><td><strong>58.5 ms</strong></td><td><strong>6.91&times;</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="sub">That is 85.5% less GPU time per request, or $0.000252 down to $0.000036 per
+  audio-minute at $0.90/GPU-hour — counting GPU occupancy alone. Real cost falls by less,
+  because CPU, network and the headroom deliberately kept to protect the tail do not shrink
+  with kernel time.</p>
+
+  <hr>
+
+  <h2>Read this before quoting any of it</h2>
+  <ul>
+    <li>The load generator runs on the same host as the gateway. These are server-side
+      latencies and exclude wide-area network time.</li>
+    <li>A held session synthesizes 10% of the time, like a voice agent taking turns.
+      3,200 held is roughly 320 speaking at once. At 100% duty, one card holds 128.</li>
+    <li>All numbers are RTX 6000 Ada. The same code went from 4 to 128 continuously
+      speaking sessions moving from an A40, so serving ceilings do not transfer between
+      cards. An A100 measured 16% worse per audio-minute at double the price.</li>
+    <li>The model is <code>facebook/mms-tts-eng</code> — 36M parameters, 16 kHz.
+      A larger model moves every number here.</li>
+    <li>Cross-request batching is off in the TensorRT front half; the batched alignment is
+      wrong for B&gt;1 because each item predicts its own frame count. It costs throughput at
+      100% duty and nothing at 10%.</li>
+  </ul>
+
+  <p class="sub" style="margin-top:28px">Full write-ups:
+    <a href="https://github.com/riya0920/streaming-tts-serving/blob/main/docs/RESULTS.md">RESULTS</a> ·
+    <a href="https://github.com/riya0920/streaming-tts-serving/blob/main/docs/ARCHITECTURE.md">ARCHITECTURE</a> ·
+    <a href="https://github.com/riya0920/streaming-tts-serving/blob/main/docs/PROFILE.md">PROFILE</a> ·
+    <a href="https://github.com/riya0920/streaming-tts-serving/blob/main/docs/NOTES.md">NOTES</a>
+  </p>
+
+</div>
+
+<div id="tip" role="status"></div>
+
+<script>
+(function () {
+  var NS = "http://www.w3.org/2000/svg";
+  var tip = document.getElementById("tip");
+
+  function el(name, attrs, text) {
+    var n = document.createElementNS(NS, name);
+    for (var k in attrs) n.setAttribute(k, attrs[k]);
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  // Rounded only at the data end, anchored flat to the baseline.
+  function barPath(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h);
+    return "M" + x + "," + (y + h) + "V" + (y + r) +
+           "a" + r + "," + r + " 0 0 1 " + r + ",-" + r +
+           "h" + (w - 2 * r) +
+           "a" + r + "," + r + " 0 0 1 " + r + "," + r +
+           "V" + (y + h) + "Z";
+  }
+  function hoverable(node, html) {
+    node.style.cursor = "default";
+    node.addEventListener("pointerenter", function (e) {
+      tip.innerHTML = html; tip.style.opacity = "1";
+      move(e);
+    });
+    node.addEventListener("pointermove", move);
+    node.addEventListener("pointerleave", function () { tip.style.opacity = "0"; });
+    function move(e) {
+      var w = tip.offsetWidth, h = tip.offsetHeight;
+      var x = Math.min(e.clientX + 14, window.innerWidth - w - 8);
+      tip.style.left = x + "px";
+      tip.style.top = Math.max(8, e.clientY - h - 12) + "px";
+    }
+  }
+
+  // ---------------------------------------------------------------- latency
+  (function () {
+    var svg = document.getElementById("c-lat");
+    if (!svg) return;
+    var W = 720, H = 300, L = 52, R = 14, T = 16, B = 46;
+    var pw = W - L - R, ph = H - T - B;
+    var yMax = 160, ticks = [0, 40, 80, 120, 160];
+    var groups = [
+      { label: "1,600", v: [24.2, 32.7, 44.6] },
+      { label: "2,400", v: [25.3, 34.7, 60.7] },
+      { label: "3,200", v: [26.3, 37.6, 113.8] }
+    ];
+    var names = ["p50", "p90", "p99"];
+    var fills = ["--s-low", "--s-mid", "--s-high"];
+    var y = function (v) { return T + ph - (v / yMax) * ph; };
+
+    ticks.forEach(function (t) {
+      svg.appendChild(el("line", { x1: L, x2: L + pw, y1: y(t), y2: y(t),
+        stroke: "var(--grid)", "stroke-width": 1 }));
+      svg.appendChild(el("text", { x: L - 10, y: y(t) + 4, "text-anchor": "end",
+        fill: "var(--muted)", "font-size": 11.5, "font-family": "system-ui, sans-serif",
+        style: "font-variant-numeric: tabular-nums" }, String(t)));
+    });
+
+    // 150 ms target. Solid, one shade up from the grid, so it does not read as a gridline.
+    svg.appendChild(el("line", { x1: L, x2: L + pw, y1: y(150), y2: y(150),
+      stroke: "var(--axis)", "stroke-width": 1.5 }));
+    svg.appendChild(el("text", { x: L + pw, y: y(150) - 7, "text-anchor": "end",
+      fill: "var(--ink-2)", "font-size": 11.5, "font-family": "system-ui, sans-serif" },
+      "150 ms target"));
+
+    var gw = pw / groups.length, bw = 40, gap = 2;
+    var span = bw * 3 + gap * 2;
+    groups.forEach(function (g, gi) {
+      var x0 = L + gi * gw + (gw - span) / 2;
+      g.v.forEach(function (v, si) {
+        var x = x0 + si * (bw + gap), h = (v / yMax) * ph;
+        var p = el("path", { d: barPath(x, y(v), bw, h, 4), fill: "var(" + fills[si] + ")" });
+        hoverable(p, "<strong>" + names[si] + " &middot; " + v.toFixed(1) + " ms</strong><br>"
+          + g.label + " held sessions");
+        svg.appendChild(p);
+      });
+      // Only the tail gets a direct label; the axis and tooltip carry the rest.
+      var v = g.v[2];
+      svg.appendChild(el("text", { x: x0 + 2 * (bw + gap) + bw / 2, y: y(v) - 8,
+        "text-anchor": "middle", fill: "var(--ink)", "font-size": 12, "font-weight": 600,
+        "font-family": "system-ui, sans-serif" }, v.toFixed(1)));
+      svg.appendChild(el("text", { x: L + gi * gw + gw / 2, y: T + ph + 22,
+        "text-anchor": "middle", fill: "var(--ink-2)", "font-size": 12.5,
+        "font-family": "system-ui, sans-serif" }, g.label));
+    });
+
+    svg.appendChild(el("line", { x1: L, x2: L + pw, y1: T + ph, y2: T + ph,
+      stroke: "var(--axis)", "stroke-width": 1 }));
+    svg.appendChild(el("text", { x: L + pw / 2, y: H - 8, "text-anchor": "middle",
+      fill: "var(--muted)", "font-size": 11.5, "font-family": "system-ui, sans-serif" },
+      "held sessions"));
+    svg.appendChild(el("text", { x: L - 40, y: T + ph / 2, "text-anchor": "middle",
+      fill: "var(--muted)", "font-size": 11.5, "font-family": "system-ui, sans-serif",
+      transform: "rotate(-90 " + (L - 40) + " " + (T + ph / 2) + ")" },
+      "time to first audio (ms)"));
+  })();
+
+  // ------------------------------------------------------------ chunk timeline
+  (function () {
+    var svg = document.getElementById("c-chunks");
+    if (!svg) return;
+    var W = 720, H = 150, L = 22, R = 22, T = 30, B = 44;
+    var pw = W - L - R;
+    var arrivals = [132, 139, 147, 154, 157, 160, 163, 166, 172, 178];
+    var xMax = 200, ticks = [0, 50, 100, 150, 200];
+    var yLine = T + 34;
+    var x = function (v) { return L + (v / xMax) * pw; };
+
+    ticks.forEach(function (t) {
+      svg.appendChild(el("line", { x1: x(t), x2: x(t), y1: T, y2: yLine + 14,
+        stroke: "var(--grid)", "stroke-width": 1 }));
+      svg.appendChild(el("text", { x: x(t), y: yLine + 34, "text-anchor": "middle",
+        fill: "var(--muted)", "font-size": 11.5, "font-family": "system-ui, sans-serif",
+        style: "font-variant-numeric: tabular-nums" }, t + (t === 200 ? " ms" : "")));
+    });
+
+    svg.appendChild(el("line", { x1: L, x2: L + pw, y1: yLine, y2: yLine,
+      stroke: "var(--axis)", "stroke-width": 1 }));
+
+    arrivals.forEach(function (a, i) {
+      // 2px surface ring so overlapping markers stay countable.
+      svg.appendChild(el("circle", { cx: x(a), cy: yLine, r: 7,
+        fill: "var(--surface)" }));
+      var c = el("circle", { cx: x(a), cy: yLine, r: 5, fill: "var(--s-mid)" });
+      hoverable(c, "<strong>chunk " + (i + 1) + " &middot; " + a + " ms</strong>"
+        + (i ? "<br>+" + (a - arrivals[i - 1]) + " ms after the previous" : "<br>first audio out"));
+      svg.appendChild(c);
+      // Generous hit target over a 10px mark.
+      var hit = el("circle", { cx: x(a), cy: yLine, r: 13, fill: "transparent" });
+      hoverable(hit, "<strong>chunk " + (i + 1) + " &middot; " + a + " ms</strong>"
+        + (i ? "<br>+" + (a - arrivals[i - 1]) + " ms after the previous" : "<br>first audio out"));
+      svg.appendChild(hit);
+    });
+
+    svg.appendChild(el("line", { x1: x(132), x2: x(132), y1: yLine - 26, y2: yLine - 10,
+      stroke: "var(--axis)", "stroke-width": 1 }));
+    svg.appendChild(el("text", { x: x(132), y: yLine - 32, "text-anchor": "middle",
+      fill: "var(--ink)", "font-size": 12, "font-weight": 600,
+      "font-family": "system-ui, sans-serif" }, "first audio, 132 ms"));
+    svg.appendChild(el("text", { x: L + pw, y: T - 8, "text-anchor": "end",
+      fill: "var(--muted)", "font-size": 11.5, "font-family": "system-ui, sans-serif" },
+      "6.26 s of speech, delivered in 10 chunks"));
+  })();
+})();
+</script>
+</body>
+</html>

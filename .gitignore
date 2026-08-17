@@ -52,3 +52,6 @@ Thumbs.db
 
 # regenerable A/B renders (see export/make_ab_audio.py)
 results/audio/
+
+# demo audio for the GitHub Pages page (small, intentionally committed)
+!docs/audio/*.wav
