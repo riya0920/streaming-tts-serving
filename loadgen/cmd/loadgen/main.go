@@ -37,6 +37,11 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Rough mean utterance length in the corpus, used only to size the startup phase
+// spread and to sanity-check run duration. It does not need to be exact — it sets the
+// scale of the stagger, not the load itself.
+const meanUtteranceSeconds = 6.0
+
 type doneMessage struct {
 	Type         string  `json:"type"`
 	Chunks       int     `json:"chunks"`
@@ -109,14 +114,20 @@ func loadCorpus(path string) []string {
 func oneSession(ctx context.Context, url string, corpus []string, rng *rand.Rand,
 	duty float64, out chan<- sample) {
 
-	// Random initial phase.
+	// Random initial phase, spread across a FULL session cycle.
 	//
-	// Without it every session starts at t=0 and then paces itself identically, so they
-	// stay locked in step and arrive in synchronized waves. That measures a thundering
-	// herd the load generator created, not the server's capacity: the first ramp showed
-	// p50 72 ms against p99 1142 ms, a bimodality entirely explained by bursts landing
-	// together. Real sessions are uniformly phased, so stagger the starts.
-	phase := time.Duration(rng.Float64() * 6 * float64(time.Second))
+	// Without any phase, every session starts at t=0 and paces identically, so they stay
+	// locked in step and arrive in synchronized waves — measuring a thundering herd the
+	// load generator created rather than the server's capacity.
+	//
+	// The spread must scale with duty cycle, which the first version got wrong: it
+	// jittered over a fixed 6 s while a session at duty=0.1 has a ~60 s cycle. Every
+	// session therefore fired inside the first 6 s and then went idle, and 400 held
+	// sessions looked like 400 simultaneous arrivals (p99 1473 ms) instead of ~40
+	// concurrently speaking. A session cycle is roughly meanUtteranceSeconds/duty, so
+	// spread the starts over exactly that.
+	cycle := meanUtteranceSeconds / duty
+	phase := time.Duration(rng.Float64() * cycle * float64(time.Second))
 	select {
 	case <-time.After(phase):
 	case <-ctx.Done():

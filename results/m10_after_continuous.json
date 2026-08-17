@@ -1,0 +1,72 @@
+{
+  "duty_cycle": 1,
+  "knee_sessions": 0,
+  "levels": [
+    {
+      "concurrency": 128,
+      "held_sessions": 128,
+      "duty_cycle": 1,
+      "requests": 600,
+      "errors": 0,
+      "rejected": 0,
+      "requests_with_underruns": 0,
+      "ttfa_p50_ms": 27.604,
+      "ttfa_p90_ms": 44.473,
+      "ttfa_p99_ms": 208.513,
+      "ttfa_max_ms": 271.648,
+      "audio_seconds_total": 4133.727999999997,
+      "aggregate_rtf": 137.79093333333324,
+      "requests_per_second": 20
+    },
+    {
+      "concurrency": 192,
+      "held_sessions": 192,
+      "duty_cycle": 1,
+      "requests": 893,
+      "errors": 0,
+      "rejected": 0,
+      "requests_with_underruns": 0,
+      "ttfa_p50_ms": 31.834,
+      "ttfa_p90_ms": 197.231,
+      "ttfa_p99_ms": 447.87,
+      "ttfa_max_ms": 502.054,
+      "audio_seconds_total": 6244.928,
+      "aggregate_rtf": 208.16426666666666,
+      "requests_per_second": 29.766666666666666
+    },
+    {
+      "concurrency": 256,
+      "held_sessions": 256,
+      "duty_cycle": 1,
+      "requests": 1172,
+      "errors": 0,
+      "rejected": 0,
+      "requests_with_underruns": 0,
+      "ttfa_p50_ms": 35.155,
+      "ttfa_p90_ms": 270.107,
+      "ttfa_p99_ms": 449.618,
+      "ttfa_max_ms": 524.326,
+      "audio_seconds_total": 8372.144000000004,
+      "aggregate_rtf": 279.0714666666668,
+      "requests_per_second": 39.06666666666667
+    },
+    {
+      "concurrency": 384,
+      "held_sessions": 384,
+      "duty_cycle": 1,
+      "requests": 1737,
+      "errors": 0,
+      "rejected": 0,
+      "requests_with_underruns": 0,
+      "ttfa_p50_ms": 1463.84,
+      "ttfa_p90_ms": 2137.213,
+      "ttfa_p99_ms": 2415.128,
+      "ttfa_max_ms": 2490.422,
+      "audio_seconds_total": 12217.12,
+      "aggregate_rtf": 407.23733333333337,
+      "requests_per_second": 57.9
+    }
+  ],
+  "note": "loadgen runs on the same host as the gateway: server-side latency only, excludes WAN",
+  "target_p99_ms": 150
+}

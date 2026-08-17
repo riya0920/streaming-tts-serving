@@ -99,7 +99,23 @@ class TRTRunner:
     def __call__(self, feeds: dict[str, torch.Tensor]) -> list[torch.Tensor]:
         for n, t in feeds.items():
             t = t.contiguous()
-            self.ctx.set_input_shape(n, tuple(t.shape))
+            # set_input_shape returns False for a shape outside the engine's optimization
+            # profile and does NOT raise. The context keeps its previous shape, the output
+            # buffer is then allocated from that stale shape, and the caller gets a tensor
+            # of the wrong length — which surfaces far away as a broadcast mismatch
+            # naming two unrelated dimensions. Fail here, where the cause is visible.
+            if not self.ctx.set_input_shape(n, tuple(t.shape)):
+                lo, hi = None, None
+                try:
+                    prof = self.engine.get_tensor_profile_shape(n, 0)
+                    lo, hi = tuple(prof[0]), tuple(prof[2])
+                except Exception:  # noqa: BLE001
+                    pass
+                raise RuntimeError(
+                    f"shape {tuple(t.shape)} for input '{n}' is outside the engine's "
+                    f"optimization profile (min {lo}, max {hi}). Rebuild the engine with "
+                    f"a wider profile, or clamp the input upstream."
+                )
             want = self._torch_dtype(self.engine.get_tensor_dtype(n))
             if t.dtype != want:
                 t = t.to(want).contiguous()
@@ -173,8 +189,10 @@ def main() -> None:
     # Frame range from M3's progressive chunking: smallest is a 1-frame remainder with
     # left context only (14); steady state is 50 kept + 26 context (76).
     dec_profile = {"latents": ([1, ch, 14], [8, ch, 76], [32, ch, 76])}
-    enc_profile = {"input_ids": ([1, 4], [8, 48], [32, 256]),
-                   "attention_mask": ([1, 4], [8, 48], [32, 256])}
+    # Character-level tokenizer: a 60-word sentence is ~300 tokens, so 256 would reject
+    # every long utterance in the corpus.
+    enc_profile = {"input_ids": ([1, 4], [8, 64], [32, 1024]),
+                   "attention_mask": ([1, 4], [8, 64], [32, 1024])}
 
     results: dict = {"trt_version": trt.__version__, "engines": {}, "decoder": {}, "encoder": {}}
 

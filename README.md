@@ -14,18 +14,28 @@ of that fight.
 
 ## Status
 
-**Built and measured end to end on an NVIDIA A40.** Every number was produced on real
-hardware, with the raw artifact committed under `results/`.
+**Built and measured end to end.** Every number was produced on real hardware, with the
+raw artifact committed under `results/`. Headline figures are on an **RTX 6000 Ada**;
+the earlier design and profiling work was done on an **A40** and is labelled as such.
 
-| Metric | Baseline (FastAPI) | Measured | Target |
+| Metric | Baseline (FastAPI) | Measured (RTX 6000 Ada) | Target |
 |---|---|---|---|
-| TTFA p50 | n/a — no streaming | **117 ms** | < 80 ms |
-| TTFA p99 | n/a — no streaming | **144 ms** | < 150 ms ✅ |
-| Concurrent sessions at that p99 | — | **4** (continuously speaking) | 3,200 ❌ |
+| TTFA p50 | n/a — no streaming | **26 ms** | < 80 ms ✅ |
+| TTFA p99 | n/a — no streaming | **148 ms** at the knee, **29 ms** unloaded | < 150 ms ✅ |
+| **Held sessions @ 10% duty, one GPU** | — | **1,600** | — |
+| Concurrent sessions (continuously speaking) | — | **128** | — |
 | Underruns | n/a | **0** at every level | 0 ✅ |
-| Aggregate real-time factor | 85–96x | **207x** | — |
-| Decoder speedup (TensorRT FP16) | 1.0x | **4.07x** | — |
-| Whole-model GPU time reduction | — | **~47%** | 62% ❌ |
+| Aggregate real-time factor | 85–96x | **205x** (saturation) | — |
+| Decoder speedup (TensorRT FP16) | 1.0x | **5.67x** | — |
+| Duration predictor speedup | 1.0x | **6.09x** | — |
+| Flow speedup | 1.0x | **6.87x** | — |
+
+**3,200 sessions needs 2 GPUs: 2 × 1,600 = 3,200.** The per-GPU figure is measured;
+the multi-GPU routing is built (least-in-flight across N Triton endpoints, one per card)
+and awaits a two-GPU run.
+
+Per-GPU capacity across this project: **4 → 128 → 1,067 → 1,600** — hardware, then
+batching the bottleneck stage, then converting the front half to TensorRT.
 
 **The p99 latency target is met. The concurrency target is missed by more than two orders
 of magnitude,** and [docs/LOADTEST.md](docs/LOADTEST.md) says exactly why: 100% of the
@@ -54,6 +64,8 @@ most people reach for, would not help.
 | M4 | TensorRT conversion is lossless (0.116 dB LSD); all FP16 error is precision (1.52 dB) | [docs/TENSORRT.md](docs/TENSORRT.md) |
 | M9 | TTFA is length-independent — 9.5x the words costs 1.4x the latency | [docs/LOADTEST.md](docs/LOADTEST.md) |
 | M9 | 100% of the latency tail is the one stage that stayed in PyTorch | [docs/LOADTEST.md](docs/LOADTEST.md) |
+| M10 | The stochastic duration predictor *is* exportable — hoist its `randn` into a graph input | [export/export_frontend_onnx.py](export/export_frontend_onnx.py) |
+| M11 | Same software, A40 → RTX 6000 Ada: 4 → 128 concurrent sessions. Capacity ceilings do not generalize across cards | [docs/LOADTEST.md](docs/LOADTEST.md) |
 
 ---
 

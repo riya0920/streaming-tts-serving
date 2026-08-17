@@ -75,6 +75,19 @@ instance_group [
   }
 ]
 
+# "trt" runs the encoder, duration predictor and flow through TensorRT engines
+# (6.01x and 6.65x measured on the duration predictor and flow respectively).
+# "torch" keeps the original PyTorch path — kept as the validation reference and as an
+# automatic fallback, since engines are architecture-specific and will not load on a
+# different GPU than they were built for.
+parameters {
+  key: "backend"
+  value: { string_value: "trt" }
+}
+parameters {
+  key: "engines_dir"
+  value: { string_value: "/workspace/models/engines" }
+}
 parameters {
   key: "model_dir"
   value: { string_value: "/workspace/models/facebook__mms-tts-eng" }

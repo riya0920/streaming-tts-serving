@@ -68,9 +68,11 @@ start_otelcol() {
 
 start_jaeger() {
   # OTLP receivers moved off the default 4317/4318 to leave those to the collector.
+  # No comments between a \ continuation and the next line: bash folds the
+  # comment into the command and silently eats the rest of it.
+  # (--query.host-port was removed in Jaeger 1.6x; the UI defaults to 16686.)
   COLLECTOR_OTLP_ENABLED=true \
   SPAN_STORAGE_TYPE=memory \
-  # --query.host-port was removed in Jaeger 1.6x; the UI defaults to 16686 anyway.
   _spawn jaeger "$OPT/jaeger/jaeger-all-in-one" \
     --collector.otlp.grpc.host-port=:5317 \
     --collector.otlp.http.host-port=:5318
@@ -96,7 +98,38 @@ start_grafana() {
   _spawn grafana "$OPT/grafana/bin/grafana" server --homepath "$OPT/grafana"
 }
 
+# One Triton per GPU, each pinned with CUDA_VISIBLE_DEVICES and offset by 10 ports.
+#
+# A single RTX 6000 Ada holds ~1,067 sessions at 10% duty (p99 149ms) and saturates at
+# aggregate RTF ~205 — a hardware ceiling. More capacity is horizontal, so the gateway
+# takes a comma-separated endpoint list and least-in-flight routes across them.
+#
+# Separate processes rather than one Triton with multiple GPU instance_groups: this way a
+# wedged backend takes down one GPU's worth of capacity instead of all of it, and each
+# server's metrics are attributable to a specific card.
+start_triton_all() {
+  local n
+  n="$(nvidia-smi --list-gpus 2>/dev/null | wc -l)"
+  [ "${n:-0}" -lt 1 ] && n=1
+  echo "  launching $n triton instance(s), one per GPU"
+  for i in $(seq 0 $((n - 1))); do
+    start_triton "$i"
+  done
+  echo
+  echo "  point the gateway at:"
+  local addrs=""
+  for i in $(seq 0 $((n - 1))); do
+    addrs="${addrs}${addrs:+,}localhost:$((8001 + i * 10))"
+  done
+  echo "    TRITON_GRPC_ADDR=$addrs"
+}
+
 start_triton() {
+  local gpu="${1:-0}"
+  local http=$((8000 + gpu * 10))
+  local grpc=$((8001 + gpu * 10))
+  local met=$((8002 + gpu * 10))
+  local name="triton${gpu}"
   local repo_arg="$REPO/model_repo"
   if [ -z "$(ls -A "$repo_arg" 2>/dev/null)" ]; then
     err "model_repo is empty — nothing to serve yet (expected until M5)"
@@ -116,14 +149,19 @@ start_triton() {
     err "venv site-packages not found — python backends will fail to import torch"
   fi
   export TTS_MODEL_DIR="${WORK}/models"
+  # Pin this server to one card. Without it every instance grabs GPU 0 and the
+  # "one Triton per GPU" split is cosmetic.
+  export CUDA_VISIBLE_DEVICES="$gpu"
 
-  _spawn triton tritonserver \
+  _spawn "$name" tritonserver \
     --model-repository="$repo_arg" \
-    --allow-metrics=true --metrics-port=8002 \
+    --http-port="$http" --grpc-port="$grpc" --metrics-port="$met" \
+    --allow-metrics=true \
     --trace-config=mode=opentelemetry \
     --trace-config=opentelemetry,url=http://localhost:4318/v1/traces \
     --trace-config=rate=100 \
     --log-verbose=0
+  echo "    gpu $gpu -> http $http / grpc $grpc / metrics $met"
 }
 
 case "${1:-status}" in
@@ -132,6 +170,10 @@ case "${1:-status}" in
     # Triton is not in the default set: it has nothing to serve until M5 populates
     # model_repo/. Start it explicitly with `services.sh start triton`.
     if [ $# -eq 0 ]; then targets=(otelcol jaeger prometheus grafana); else targets=("$@"); fi
+    # "triton" means every GPU; a bare start_triton would only ever start GPU 0.
+    for i in "${!targets[@]}"; do
+      [ "${targets[$i]}" = "triton" ] && targets[$i]="triton_all"
+    done
     log "starting: ${targets[*]}"
     for t in "${targets[@]}"; do "start_$t"; done
     echo
@@ -142,12 +184,18 @@ case "${1:-status}" in
     ;;
   stop)
     shift
-    targets=("$@"); [ $# -eq 0 ] && targets=(triton grafana prometheus jaeger otelcol)
+    targets=("$@")
+    if [ $# -eq 0 ]; then
+      targets=(grafana prometheus jaeger otelcol)
+      for i in $(seq 0 7); do [ -f "$RUN/triton${i}.pid" ] && targets=("triton${i}" "${targets[@]}"); done
+    fi
     log "stopping: ${targets[*]}"
     for t in "${targets[@]}"; do _kill "$t"; done
     ;;
   status)
-    for n in triton otelcol jaeger prometheus grafana; do
+    names=(otelcol jaeger prometheus grafana)
+    for i in $(seq 0 7); do [ -f "$RUN/triton${i}.pid" ] && names=("triton${i}" "${names[@]}"); done
+    for n in "${names[@]}"; do
       if _running "$n"; then printf "  %-11s UP   pid %s\n" "$n" "$(cat "$(_pidfile "$n")")"
       else printf "  %-11s down\n" "$n"; fi
     done

@@ -55,7 +55,7 @@ const sampleRate = 16000
 type config struct {
 	listen        string
 	metricsListen string
-	tritonGRPC    string
+	tritonGRPC    string  // comma-separated list of endpoints
 	tritonMetrics string
 	maxInFlight   int64
 	maxQueueDepth int64
@@ -80,6 +80,8 @@ func loadConfig() config {
 	return config{
 		listen:        env("GATEWAY_LISTEN", ":8080"),
 		metricsListen: env("GATEWAY_METRICS_LISTEN", ":9091"),
+		// Comma-separated: one entry per GPU. A single RTX 6000 Ada holds ~1,067
+		// sessions at 10% duty; beyond that capacity is a horizontal problem.
 		tritonGRPC:    env("TRITON_GRPC_ADDR", "localhost:8001"),
 		tritonMetrics: env("TRITON_METRICS_URL", "http://localhost:8002/metrics"),
 		maxInFlight:   envInt("MAX_INFLIGHT_SESSIONS", 3500),
@@ -90,7 +92,7 @@ func loadConfig() config {
 
 type server struct {
 	cfg      config
-	triton   *tritonclient.Client
+	pool     *tritonclient.Pool
 	adm      *admission.Controller
 	tracer   trace.Tracer
 	log      *slog.Logger
@@ -122,16 +124,18 @@ func main() {
 	}
 	defer shutdownTracing()
 
-	tc, err := tritonclient.Dial(cfg.tritonGRPC)
+	pool, err := tritonclient.DialPool(cfg.tritonGRPC)
 	if err != nil {
 		log.Error("cannot reach triton", "err", err)
 		os.Exit(1)
 	}
-	defer tc.Close()
+	defer pool.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	for {
-		if err := tc.Ready(ctx); err == nil {
+		if n, err := pool.Ready(ctx); err == nil {
+			log.Info("triton endpoints ready", "ready", n, "total", pool.Size(),
+				"addrs", pool.Addrs())
 			break
 		}
 		select {
@@ -145,8 +149,8 @@ func main() {
 	cancel()
 
 	s := &server{
-		cfg:    cfg,
-		triton: tc,
+		cfg:  cfg,
+		pool: pool,
 		adm: admission.New(admission.Config{
 			MaxInFlight:       cfg.maxInFlight,
 			MaxQueueDepth:     cfg.maxQueueDepth,
@@ -180,7 +184,7 @@ func main() {
 		}
 	}()
 	go func() {
-		log.Info("gateway listening", "addr", cfg.listen, "triton", cfg.tritonGRPC,
+		log.Info("gateway listening", "addr", cfg.listen, "triton_endpoints", pool.Addrs(),
 			"max_in_flight", cfg.maxInFlight, "max_queue_depth", cfg.maxQueueDepth)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("gateway server", "err", err)
@@ -205,6 +209,12 @@ func main() {
 func (s *server) pollQueueDepth() {
 	client := &http.Client{Timeout: 2 * time.Second}
 	var lastCount, lastNs float64
+	// Triton's counters are cumulative and survive gateway restarts. Without this flag
+	// the first poll differences against zero, so the entire lifetime counter reads as
+	// one 500 ms sample — observed as queue_depth 885 on an idle gateway, which is well
+	// past the rejection threshold and would refuse every request until the next tick.
+	// Seed the baseline on the first poll and only start estimating from the second.
+	primed := false
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -232,6 +242,10 @@ func (s *server) pollQueueDepth() {
 		}
 		dCount, dNs := count-lastCount, ns-lastNs
 		lastCount, lastNs = count, ns
+		if !primed {
+			primed = true
+			continue
+		}
 		if dCount > 0 && dNs > 0 {
 			meanQueueSec := (dNs / dCount) / 1e6
 			arrivalRate := dCount / 0.5
@@ -256,8 +270,9 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"in_flight":   s.adm.InFlight(),
 		"queue_depth": s.adm.QueueDepth(),
 		"sessions":    s.sessions.Load(),
+		"endpoints":   s.pool.Stats(),
 	}
-	if err := s.triton.Ready(ctx); err != nil {
+	if _, err := s.pool.Ready(ctx); err != nil {
 		status["ok"] = false
 		w.WriteHeader(http.StatusServiceUnavailable)
 	} else {
@@ -334,10 +349,23 @@ func (s *server) synthesizeToSocket(ctx context.Context, conn *websocket.Conn,
 
 	start := time.Now()
 
+	// One endpoint for all three hops. Splitting them would ship latents between
+	// machines for no benefit, and would let one slow endpoint touch every request
+	// rather than a share of them.
+	lease, err := s.pool.Acquire()
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+	var leaseErr error
+	defer func() { lease.Release(leaseErr) }()
+	span.SetAttributes(attribute.String("triton.endpoint", lease.Addr))
+
 	_, fspan := s.tracer.Start(ctx, "tts.frontend")
-	fr, err := s.triton.Frontend(ctx, text)
+	fr, err := lease.Client.Frontend(ctx, text)
 	fspan.End()
 	if err != nil {
+		leaseErr = err
 		span.RecordError(err)
 		return err
 	}
@@ -345,9 +373,10 @@ func (s *server) synthesizeToSocket(ctx context.Context, conn *websocket.Conn,
 
 	latStart := time.Now()
 	_, lspan := s.tracer.Start(ctx, "tts.latents")
-	lat, err := s.triton.Latents(ctx, fr)
+	lat, err := lease.Client.Latents(ctx, fr)
 	lspan.End()
 	if err != nil {
+		leaseErr = err
 		span.RecordError(err)
 		return err
 	}
@@ -364,7 +393,7 @@ func (s *server) synthesizeToSocket(ctx context.Context, conn *websocket.Conn,
 		playedSec    float64
 	)
 
-	err = s.triton.StreamAudio(ctx, lat, func(c tritonclient.AudioChunk) error {
+	err = lease.Client.StreamAudio(ctx, lat, func(c tritonclient.AudioChunk) error {
 		now := time.Since(start)
 		if chunks == 0 {
 			ttfa = now
@@ -396,6 +425,7 @@ func (s *server) synthesizeToSocket(ctx context.Context, conn *websocket.Conn,
 		return nil
 	})
 	if err != nil {
+		leaseErr = err
 		span.RecordError(err)
 		return err
 	}
@@ -452,23 +482,34 @@ func (s *server) handleBatch(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 	start := time.Now()
 
-	fr, err := s.triton.Frontend(ctx, req.Text)
+	lease, err := s.pool.Acquire()
 	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	var leaseErr error
+	defer func() { lease.Release(leaseErr) }()
+
+	fr, err := lease.Client.Frontend(ctx, req.Text)
+	if err != nil {
+		leaseErr = err
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	lat, err := s.triton.Latents(ctx, fr)
+	lat, err := lease.Client.Latents(ctx, fr)
 	if err != nil {
+		leaseErr = err
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	var pcm []int16
-	err = s.triton.StreamAudio(ctx, lat, func(c tritonclient.AudioChunk) error {
+	err = lease.Client.StreamAudio(ctx, lat, func(c tritonclient.AudioChunk) error {
 		pcm = append(pcm, c.PCM...)
 		return nil
 	})
 	if err != nil {
+		leaseErr = err
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

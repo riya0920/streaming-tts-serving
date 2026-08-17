@@ -1,0 +1,40 @@
+{
+  "duty_cycle": 0.1,
+  "knee_sessions": 1067,
+  "levels": [
+    {
+      "concurrency": 1067,
+      "held_sessions": 1067,
+      "duty_cycle": 0.1,
+      "requests": 4188,
+      "errors": 0,
+      "rejected": 0,
+      "requests_with_underruns": 0,
+      "ttfa_p50_ms": 54.346,
+      "ttfa_p90_ms": 86.031,
+      "ttfa_p99_ms": 149.059,
+      "ttfa_max_ms": 258.029,
+      "audio_seconds_total": 28740.271999999946,
+      "aggregate_rtf": 119.75113333333312,
+      "requests_per_second": 17.45
+    },
+    {
+      "concurrency": 1152,
+      "held_sessions": 1152,
+      "duty_cycle": 0.1,
+      "requests": 4520,
+      "errors": 0,
+      "rejected": 0,
+      "requests_with_underruns": 0,
+      "ttfa_p50_ms": 54.5,
+      "ttfa_p90_ms": 86.333,
+      "ttfa_p99_ms": 150.036,
+      "ttfa_max_ms": 281.285,
+      "audio_seconds_total": 31142.70399999996,
+      "aggregate_rtf": 129.7612666666665,
+      "requests_per_second": 18.833333333333332
+    }
+  ],
+  "note": "loadgen runs on the same host as the gateway: server-side latency only, excludes WAN",
+  "target_p99_ms": 150
+}

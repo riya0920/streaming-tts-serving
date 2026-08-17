@@ -1,0 +1,57 @@
+{
+  "trt_version": "10.3.0",
+  "engines": {
+    "duration_fp32": {
+      "file": "vits_duration_fp32.plan",
+      "build_seconds": 18.6,
+      "size_mb": 9.15,
+      "fp16": false
+    },
+    "duration_fp16": {
+      "file": "vits_duration_fp16.plan",
+      "build_seconds": 50.2,
+      "size_mb": 7.14,
+      "fp16": true
+    },
+    "flow_fp32": {
+      "file": "vits_flow_fp32.plan",
+      "build_seconds": 22.4,
+      "size_mb": 30.24,
+      "fp16": false
+    },
+    "flow_fp16": {
+      "file": "vits_flow_fp16.plan",
+      "build_seconds": 58.1,
+      "size_mb": 18.26,
+      "fp16": true
+    }
+  },
+  "bench": {
+    "duration": {
+      "torch_ms": 11.425,
+      "trt_fp16_ms": 1.876,
+      "speedup": 6.09,
+      "noise_live": true,
+      "noise_spread": 0.628738,
+      "shape_match": true
+    },
+    "flow_T200": {
+      "torch_ms": 5.691,
+      "trt_fp16_ms": 0.855,
+      "speedup": 6.66,
+      "rel_rms": 0.00031153403774187595
+    },
+    "flow_T400": {
+      "torch_ms": 5.784,
+      "trt_fp16_ms": 0.871,
+      "speedup": 6.64,
+      "rel_rms": 0.00031216567025334636
+    },
+    "flow_T800": {
+      "torch_ms": 6.15,
+      "trt_fp16_ms": 0.896,
+      "speedup": 6.87,
+      "rel_rms": 0.0003067545265150646
+    }
+  }
+}
