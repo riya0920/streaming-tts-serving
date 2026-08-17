@@ -1,0 +1,51 @@
+# model artifacts — large, machine-specific, rebuilt by export/
+*.onnx
+*.plan
+*.engine
+*.pt
+*.pth
+*.ckpt
+model_repo/**/1/*.so
+model_repo/**/*.onnx
+model_repo/**/*.plan
+
+# audio output
+*.wav
+*.flac
+!tests/fixtures/*.wav
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# go
+gateway/gateway
+gateway/bin/
+loadgen/loadgen
+loadgen/bin/
+
+# c++ build
+backends/**/build/
+*.o
+
+# local env / secrets
+.env
+*.local.yml
+gpu_box.txt
+
+# tooling
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# raw profiler dumps (keep the summaries, not the multi-GB traces)
+*.nsys-rep
+*.qdrep
+*.ncu-rep
+
+# per-pod connection details
+.box.env

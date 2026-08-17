@@ -1,0 +1,47 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 512
+  # Traces are for diagnosing the tail, so keep the tail. Head sampling would throw away
+  # exactly the slow requests we are hunting.
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 50000
+    policies:
+      - name: slow-requests
+        type: latency
+        latency: { threshold_ms: 120 }
+      - name: errors
+        type: status_code
+        status_code: { status_codes: [ERROR] }
+      - name: baseline-sample
+        type: probabilistic
+        probabilistic: { sampling_percentage: 2 }
+
+exporters:
+  otlp/jaeger:
+    # Jaeger's OTLP receiver is moved to 5317 so it does not collide with this
+    # collector on the default 4317. See scripts/services.sh.
+    endpoint: localhost:5317
+    tls:
+      insecure: true
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [tail_sampling, batch]
+      exporters: [otlp/jaeger]
+  telemetry:
+    logs:
+      level: warn

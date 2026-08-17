@@ -1,0 +1,13 @@
+# Export pipeline: PyTorch -> ONNX -> TensorRT, plus FP16 quality validation.
+# Install torch matching the box's CUDA first:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+torch>=2.3
+transformers>=4.44
+onnx>=1.16
+onnxruntime-gpu>=1.18      # used to sanity-check the ONNX graph before TRT
+numpy>=1.26
+scipy>=1.13                # spectral distance metrics for FP16 validation
+soundfile>=0.12
+
+# TensorRT itself ships inside the Triton container; engine builds run there rather
+# than in this venv. `pip install tensorrt` also works if you want host-side builds.

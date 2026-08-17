@@ -1,0 +1,23 @@
+global:
+  # TTFA moves on a sub-second scale; a 15s scrape smears the transitions we care about.
+  scrape_interval: 5s
+  evaluation_interval: 15s
+
+# Everything runs in one pod (RunPod pods are containers, so there is no Docker network
+# and no service-name DNS) — targets are localhost. On a VM+compose deploy, swap these
+# for the service names in docker/docker-compose.yml.
+scrape_configs:
+  - job_name: triton
+    static_configs:
+      - targets: ["localhost:8002"]
+    # Triton exports nv_gpu_utilization / nv_gpu_memory_used_bytes / nv_gpu_power_usage
+    # itself, which is why there is no DCGM exporter here — DCGM wants privileges a pod
+    # does not have, and Triton's own GPU metrics cover the dashboards.
+
+  - job_name: gateway
+    static_configs:
+      - targets: ["localhost:9091"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

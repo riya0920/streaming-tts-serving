@@ -1,0 +1,146 @@
+# Full serving + observability stack. Run from the repo root:
+#   docker compose -f docker/docker-compose.yml up -d
+#
+# Everything binds to 127.0.0.1 — reach it over an SSH tunnel, do not expose a rented
+# box's ports to the internet.
+
+services:
+  triton:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.triton
+      args:
+        TRITON_VERSION: ${TRITON_VERSION:-24.08}
+    image: tts-triton:dev
+    container_name: tts-triton
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    shm_size: 2gb
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    volumes:
+      - ../model_repo:/models
+      - ../models:/artifacts          # checkpoints + built .plan files (gitignored)
+      - ../backends:/workspace/backends
+    command: >
+      tritonserver
+        --model-repository=/models
+        --model-control-mode=explicit
+        --load-model=*
+        --backend-directory=/opt/tritonserver/backends
+        --allow-metrics=true
+        --metrics-port=8002
+        --trace-config=mode=opentelemetry
+        --trace-config=opentelemetry,url=http://otel-collector:4318/v1/traces
+        --trace-config=rate=100
+        --log-verbose=0
+    ports:
+      - "127.0.0.1:8000:8000"   # HTTP
+      - "127.0.0.1:8001:8001"   # gRPC
+      - "127.0.0.1:8002:8002"   # metrics
+    healthcheck:
+      test: ["CMD", "bash", "-c", "curl -fsS localhost:8000/v2/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+
+  # Go control plane. Built once gateway/ exists (M7); until then this service is
+  # inert and the stack still comes up.
+  gateway:
+    build:
+      context: ../gateway
+      dockerfile: Dockerfile
+    image: tts-gateway:dev
+    container_name: tts-gateway
+    restart: unless-stopped
+    profiles: ["gateway"]
+    depends_on:
+      triton:
+        condition: service_healthy
+    environment:
+      TRITON_GRPC_ADDR: triton:8001
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: tts-gateway
+      GATEWAY_LISTEN: ":8080"
+      MAX_INFLIGHT_SESSIONS: "3500"
+      MAX_TRITON_QUEUE_DEPTH: "64"
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:9091:9091"   # gateway's own /metrics
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.105.0
+    container_name: tts-otel
+    restart: unless-stopped
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ../observability/otel-collector.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    container_name: tts-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:16686:16686"
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: tts-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  # Per-GPU utilization, SM occupancy, memory bandwidth. Triton's own metrics do not
+  # tell you whether the GPU is actually busy or just holding memory.
+  dcgm-exporter:
+    image: nvidia/dcgm-exporter:3.3.7-3.5.0-ubuntu22.04
+    container_name: tts-dcgm
+    restart: unless-stopped
+    cap_add: [SYS_ADMIN]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility]
+    ports:
+      - "127.0.0.1:9400:9400"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: tts-grafana
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  prom-data:
+  grafana-data:

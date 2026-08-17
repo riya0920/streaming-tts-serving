@@ -1,0 +1,44 @@
+# Load-test corpus. Sentence lengths are the single biggest driver of TTS latency, so a
+# corpus of uniformly short prompts produces a flattering and meaningless benchmark.
+#
+# The distribution here is deliberately mixed to approximate assistant speech: mostly
+# short-to-medium replies, with a tail of long ones. Lines starting with # are ignored.
+
+# --- short (conversational acknowledgements, 3-8 words) ---
+Sure, I can help with that.
+Got it.
+Let me check that for you.
+That should be all set.
+Yes, that's correct.
+Hmm, I'm not sure about that one.
+Okay, one moment.
+Done.
+Anything else?
+Sounds good to me.
+
+# --- medium (typical assistant replies, 15-30 words) ---
+Your flight leaves at four fifteen from gate B twelve, and boarding starts about forty minutes before that.
+I found three restaurants nearby that are open right now and have tables available for two people this evening.
+The package was delivered yesterday at two thirty in the afternoon and left at the front door as requested.
+Based on your calendar, the only free slot this week is Thursday between one and two in the afternoon.
+I've added milk, eggs, and coffee to your shopping list, and moved the reminder to tomorrow morning at eight.
+The forecast shows rain starting around six this evening and continuing through most of the night.
+That charge was from a subscription renewal on the twelfth, and it looks like the same amount as last month.
+I can transfer you to a human agent, though the current wait time is about twelve minutes.
+Your appointment has been rescheduled to next Tuesday at ten in the morning, and a confirmation is on its way.
+There are two unread messages from this morning, both from the same sender, and neither looks urgent.
+
+# --- long (explanatory answers, 40-70 words — these stress the streaming path) ---
+The main difference is that the first option charges a flat monthly rate regardless of usage, which is simpler to predict, while the second bills per request and works out cheaper if your traffic is genuinely intermittent, but it can spike unexpectedly during a busy period, so most people pick the flat rate for peace of mind rather than raw cost.
+To set this up, you'll first want to open the settings menu and find the section for connected devices, then choose add new device and wait for the list to populate, which usually takes about ten seconds, and once your device appears you can select it and confirm the six digit code that shows on both screens.
+Historically, that neighborhood was mostly warehouses and light industry until the late nineteen nineties, when a series of zoning changes allowed residential conversion, and over the following two decades most of the older buildings were either renovated into apartments or replaced entirely, which is why the architecture looks so inconsistent from one block to the next.
+The short answer is yes, but with a caveat: the warranty covers manufacturing defects for two years from the date of purchase, and it does not cover accidental damage, water exposure, or normal wear on the battery, so if the issue is the screen cracking from a drop, that would fall outside what they will repair for free.
+
+# --- text normalization stressors (numbers, abbreviations, currency, dates) ---
+Dr. Chen's invoice came to $1,247.50, due on 3/14/2026.
+The temperature dropped to -7 degrees Celsius at 11:45 PM.
+Route 66 runs approximately 2,448 miles from Chicago to Santa Monica.
+She lives at 1600 Pennsylvania Ave NW, apt. 3B, and her number ends in 0942.
+It's about 5.5 km, or roughly 3.4 miles, which takes 45 min. on foot.
+The meeting moved from Feb. 3rd to Feb. 21st at 9 a.m. sharp.
+Version 2.10.1 fixes 14 bugs and reduces memory use by 38%.

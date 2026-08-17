@@ -1,0 +1,11 @@
+# Baseline server. Install torch matching the box's CUDA first, e.g.:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+torch>=2.3
+transformers>=4.44
+fastapi>=0.112
+uvicorn[standard]>=0.30
+pydantic>=2.8
+numpy>=1.26
+
+# load driver
+aiohttp>=3.10

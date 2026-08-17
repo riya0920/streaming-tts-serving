@@ -1,0 +1,16 @@
+# Repo is authored on Windows but every script runs on Linux. Force LF so bash does not
+# choke on CRLF shebangs.
+* text=auto eol=lf
+*.sh   text eol=lf
+*.py   text eol=lf
+*.go   text eol=lf
+*.cc   text eol=lf
+*.h    text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.pbtxt text eol=lf
+Dockerfile* text eol=lf
+
+*.onnx binary
+*.plan binary
+*.wav  binary
